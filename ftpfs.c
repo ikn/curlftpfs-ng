@@ -48,6 +48,7 @@ struct buffer {
   size_t size;
 };
 
+static void usage(const char* progname);
 static char* get_dir_path(const char* path, int strip);
 static int parse_dir(struct buffer* buf, const char* dir,
                      const char* name, struct stat* sbuf,
@@ -224,12 +225,20 @@ struct ftpfs_file {
   int copied;
 };
 
+enum {
+  KEY_HELP,
+};
+
 #define FTPFS_OPT(t, p, v) { t, offsetof(struct ftpfs, p), v }
 
 static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("-v",                 verbose, 1),
   FTPFS_OPT("ftpfs_debug",        debug, 1),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
+
+  FUSE_OPT_KEY("-h",             KEY_HELP),
+  FUSE_OPT_KEY("--help",         KEY_HELP),
+  FUSE_OPT_END
 };
 
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *data) {
@@ -815,27 +824,6 @@ static int ftpfs_statfs(const char *path, struct statfs *buf)
 }
 #endif
 
-static int ftpfs_opt_proc(void* data, const char* arg, int key,
-                          struct fuse_args* outargs) {
-  (void) data;
-  (void) outargs;
-
-  switch (key) {
-    case FUSE_OPT_KEY_OPT:
-      return 1;
-    case FUSE_OPT_KEY_NONOPT:
-      if (!ftpfs.host) {
-        ftpfs.host = g_strdup_printf("%s%s", arg, 
-			arg[strlen(arg)-1] == '/' ? "" : "/");
-        return 0;
-      } else if (!ftpfs.mountpoint)
-        ftpfs.mountpoint = strdup(arg);
-      return 1;
-    default:
-      exit(1);
-  }
-}
-
 static struct fuse_cache_operations ftpfs_oper = {
   .oper = {
 #ifdef SSHFS_USE_INIT
@@ -869,6 +857,46 @@ static struct fuse_cache_operations ftpfs_oper = {
   .cache_getdir = ftpfs_getdir,
 };
 
+static int ftpfs_opt_proc(void* data, const char* arg, int key,
+                          struct fuse_args* outargs) {
+  (void) data;
+  (void) outargs;
+
+  switch (key) {
+    case FUSE_OPT_KEY_OPT:
+      return 1;
+    case FUSE_OPT_KEY_NONOPT:
+      if (!ftpfs.host) {
+        ftpfs.host = g_strdup_printf("%s%s", arg, 
+			arg[strlen(arg)-1] == '/' ? "" : "/");
+        return 0;
+      } else if (!ftpfs.mountpoint)
+        ftpfs.mountpoint = strdup(arg);
+      return 1;
+    case KEY_HELP:
+      usage(outargs->argv[0]);
+      fuse_opt_add_arg(outargs, "-ho");
+      fuse_main(outargs->argc, outargs->argv, &ftpfs_oper.oper);
+      exit(1);
+    default:
+      exit(1);
+  }
+}
+
+static void usage(const char* progname) {
+  fprintf(stderr,
+"usage: %s <ftphost> <mountpoint>\n"
+"\n"
+"    -o opt,[opt...]        mount options\n"
+"    -h   --help            print help\n"
+"    -V   --version         print version\n"
+"\n"
+"FTPFS options:\n"
+"    -o ftpfs_debug         print some debugging information\n"
+"    -o transform_symlinks  prepend mountpoint to absolute symlink targets\n"
+"\n", progname);
+}
+
 int main(int argc, char** argv) {
   int res;
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
@@ -890,16 +918,6 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_ERRORBUFFER, error_buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
-  if (ftpfs.verbose) curl_easy_setopt(ftpfs.connection, CURLOPT_VERBOSE, 1);
-  curl_res = curl_easy_perform(ftpfs.connection);
-  if (curl_res != 0) {
-    fprintf(stderr, "Error connecting to ftp: %s\n", error_buf);
-    exit(1);
-  }
-
   res = cache_parse_options(&args);
   if (res == -1)
     exit(1);
@@ -914,6 +932,16 @@ int main(int argc, char** argv) {
     ftpfs.symlink_prefix_len = strlen(ftpfs.symlink_prefix);
   else {
     perror("unable to normalize mount path");
+    exit(1);
+  }
+
+  curl_easy_setopt(ftpfs.connection, CURLOPT_ERRORBUFFER, error_buf);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
+  if (ftpfs.verbose) curl_easy_setopt(ftpfs.connection, CURLOPT_VERBOSE, 1);
+  curl_res = curl_easy_perform(ftpfs.connection);
+  if (curl_res != 0) {
+    fprintf(stderr, "Error connecting to ftp: %s\n", error_buf);
     exit(1);
   }
 

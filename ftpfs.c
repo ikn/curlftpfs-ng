@@ -328,42 +328,6 @@ static int parse_dir(struct buffer* buf, const char* dir,
     strncpy(line, start, end - start);
     line[end - start] = '\0';
 
-    // Symbolic links
-    char* link = strstr(line, " -> "); 
-
-    if (link) {
-      file = link;
-      --file;
-      while (!isspace(*file)) --file;
-      ++file;
-      file = g_strndup(file, link - file);
-    } else {
-      file = strrchr(line, ' ');
-      ++file;
-      file = g_strdup(file);
-    }
-
-    char *full_path = g_strdup_printf("%s%s", dir, file);
-    
-    if (link) {
-      link += 4;
-      char *reallink;
-      if (link[0] == '/' && ftpfs.symlink_prefix_len) {
-        reallink = g_strdup_printf("%s%s", ftpfs.symlink_prefix, link);
-      } else {
-        reallink = g_strdup(link);
-      }
-      int linksize = strlen(reallink);
-      cache_add_link(full_path, reallink, linksize+1);
-      DEBUG("cache_add_link: %s %s\n", full_path, reallink);
-      if (linkbuf && linklen) {
-        if (linksize > linklen) linksize = linklen - 1;
-        strncpy(linkbuf, reallink, linksize);
-        linkbuf[linksize] = '\0';
-      }
-      free(reallink);
-    }
-
     int i = 0;
     char *p;
     if (line[i] == 'd') {
@@ -420,6 +384,7 @@ static int parse_dir(struct buffer* buf, const char* dir,
 	    // Hour
 	    ++i;
 	    int minute = strtol(line+i, &p, 10);
+	    i = p - line;
 	    parsed_time.tm_mday = day;
 	    parsed_time.tm_mon = month;
 	    parsed_time.tm_year = current_time.tm_year;
@@ -444,6 +409,39 @@ static int parse_dir(struct buffer* buf, const char* dir,
 	}
       }
     }
+
+    // Symbolic links
+    const char* link = strstr(line, " -> "); 
+
+    file = line + i + 1;
+    if (link) {
+      file = g_strndup(file, link - file);
+    } else {
+      file = g_strdup(file);
+    }
+    DEBUG("%s\n", file);
+
+    char *full_path = g_strdup_printf("%s%s", dir, file);
+    
+    if (link) {
+      link += 4;
+      char *reallink;
+      if (link[0] == '/' && ftpfs.symlink_prefix_len) {
+        reallink = g_strdup_printf("%s%s", ftpfs.symlink_prefix, link);
+      } else {
+        reallink = g_strdup(link);
+      }
+      int linksize = strlen(reallink);
+      cache_add_link(full_path, reallink, linksize+1);
+      DEBUG("cache_add_link: %s %s\n", full_path, reallink);
+      if (linkbuf && linklen) {
+        if (linksize > linklen) linksize = linklen - 1;
+        strncpy(linkbuf, reallink, linksize);
+        linkbuf[linksize] = '\0';
+      }
+      free(reallink);
+    }
+
 
     if (h && filler) {
       DEBUG("filler: %s\n", file);
@@ -792,7 +790,7 @@ static int ftpfs_statfs(const char *path, struct statvfs *buf)
     (void) path;
 
     buf->f_namemax = 255;
-    buf->f_bsize = ftpfs.blksize;
+    buf->f_bsize = 512;
     buf->f_frsize = 512;
     buf->f_blocks = 999999999 * 2;
     buf->f_bfree =  999999999 * 2;

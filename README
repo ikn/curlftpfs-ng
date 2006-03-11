@@ -1,0 +1,29 @@
+CurlFtpFS
+=========
+
+CurlFtpFS is a filesystem for acessing ftp hosts based on FUSE and
+libcurl. It automatically reconnects if the server times out. 
+
+My motivation to start this project was to learn how to program using
+Curl (http://curl.haxx.se) and Fuse (http://fuse.sourceforge.net). I
+also wanted to maintain my website (http://www.golaberto.com.br) using
+the tools that I was used to, like cd, mv, cp and vim.
+
+As the FTP protocol is not very feature rich, this filesystem does not
+fulfill every constraint of a real filesystem, but it should be usable
+for simple tasks like copying and editing files.
+
+Compilation and Instalation
+===========================
+
+./configure
+make
+make install
+
+Usage
+=====
+
+curlftpfs <ftpsite> <mountpoint>
+
+ex.:
+curlftpfs ftp://ftp.sunet.se/ sunet/

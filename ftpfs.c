@@ -35,6 +35,7 @@ struct ftpfs {
   int verbose;
   int debug;
   int transform_symlinks;
+  int no_epsv;
   char symlink_prefix[PATH_MAX+1];
   size_t symlink_prefix_len;
 };
@@ -227,17 +228,23 @@ struct ftpfs_file {
 
 enum {
   KEY_HELP,
+  KEY_VERBOSE,
+  KEY_VERSION,
 };
 
 #define FTPFS_OPT(t, p, v) { t, offsetof(struct ftpfs, p), v }
 
 static struct fuse_opt ftpfs_opts[] = {
-  FTPFS_OPT("-v",                 verbose, 1),
   FTPFS_OPT("ftpfs_debug",        debug, 1),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
+  FTPFS_OPT("no_epsv",            no_epsv, 1),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
+  FUSE_OPT_KEY("-v",             KEY_VERBOSE),
+  FUSE_OPT_KEY("--verbose",      KEY_VERBOSE),
+  FUSE_OPT_KEY("-V",             KEY_VERSION),
+  FUSE_OPT_KEY("--version",      KEY_VERSION),
   FUSE_OPT_END
 };
 
@@ -336,6 +343,9 @@ static int parse_dir(struct buffer* buf, const char* dir,
     line = (char*)malloc(end - start + 1);
     strncpy(line, start, end - start);
     line[end - start] = '\0';
+    start = *end == '\r' ? end + 2 : end + 1;
+
+    if (!strncmp(line, "total", 5)) continue;
 
     int i = 0;
     char *p;
@@ -465,7 +475,6 @@ static int parse_dir(struct buffer* buf, const char* dir,
       found = 1;
     }
     
-    start = *end == '\r' ? end + 2 : end + 1;
     free(full_path);
     free(line);
     free(file);
@@ -878,6 +887,12 @@ static int ftpfs_opt_proc(void* data, const char* arg, int key,
       fuse_opt_add_arg(outargs, "-ho");
       fuse_main(outargs->argc, outargs->argv, &ftpfs_oper.oper);
       exit(1);
+    case KEY_VERBOSE:
+      ftpfs.verbose = 1;
+      return 0;
+    case KEY_VERSION:
+      fprintf(stderr, "Version 0.2\n");
+      exit(1);
     default:
       exit(1);
   }
@@ -888,12 +903,14 @@ static void usage(const char* progname) {
 "usage: %s <ftphost> <mountpoint>\n"
 "\n"
 "    -o opt,[opt...]        mount options\n"
+"    -v   --verbose         make libcurl print verbose debug\n"
 "    -h   --help            print help\n"
 "    -V   --version         print version\n"
 "\n"
 "FTPFS options:\n"
 "    -o ftpfs_debug         print some debugging information\n"
 "    -o transform_symlinks  prepend mountpoint to absolute symlink targets\n"
+"    -o no_epsv             make libcurl use PASV, without trying EPSV first\n"
 "\n", progname);
 }
 
@@ -933,6 +950,11 @@ int main(int argc, char** argv) {
   else {
     perror("unable to normalize mount path");
     exit(1);
+  }
+
+  if (ftpfs.no_epsv) {
+    DEBUG("Not trying EPSV mode\n");
+    curl_easy_setopt(ftpfs.connection, CURLOPT_FTP_USE_EPSV, 0);
   }
 
   curl_easy_setopt(ftpfs.connection, CURLOPT_ERRORBUFFER, error_buf);

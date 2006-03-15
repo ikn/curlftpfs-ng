@@ -615,24 +615,29 @@ static int ftpfs_utime(const char* path, struct utimbuf* time) {
 static int ftpfs_rmdir(const char* path) {
   int err = 0;
   struct curl_slist* header = NULL;
-  char *cmd = g_strdup_printf("RMD %s", path);
+  char* full_path = get_dir_path(path, 1);
+  char* cmd = g_strdup_printf("RMD %s", strrchr(path, '/') + 1);
   struct buffer buf;
   buf_init(&buf, 0);
 
+  DEBUG("%s\n", full_path);
+  DEBUG("%s\n", cmd);
+
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, NULL);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
   
   buf_free(&buf);
   curl_slist_free_all(header);
+  free(full_path);
   free(cmd);
   return err;
 }
@@ -641,14 +646,14 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   (void) mode;
   int err = 0;
   struct curl_slist* header = NULL;
-  char *cmd = g_strdup_printf("MKD %s", path);
-  char *full_path = g_strdup_printf("%s%s/", ftpfs.host, path + 1);
+  char* full_path = get_dir_path(path, 1);
+  char* cmd = g_strdup_printf("MKD %s", strrchr(path, '/') + 1);
   struct buffer buf;
   buf_init(&buf, 0);
 
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, header);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -656,36 +661,38 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, NULL);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
   
   buf_free(&buf);
   curl_slist_free_all(header);
-  free(cmd);
   free(full_path);
+  free(cmd);
   return err;
 }
 
 static int ftpfs_unlink(const char* path) {
   int err = 0;
   struct curl_slist* header = NULL;
-  char *cmd = g_strdup_printf("DELE %s", path);
+  char* full_path = get_dir_path(path, 1);
+  char* cmd = g_strdup_printf("DELE %s", strrchr(path, '/') + 1);
   struct buffer buf;
   buf_init(&buf, 0);
 
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, NULL);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
   
   buf_free(&buf);
   curl_slist_free_all(header);
+  free(full_path);
   free(cmd);
   return err;
 }
@@ -749,15 +756,15 @@ static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
 
 static int ftpfs_rename(const char* from, const char* to) {
   int err = 0;
-  char *rnfr = g_strdup_printf("RNFR %s", from);
-  char *rnto = g_strdup_printf("RNTO %s", to);
+  char* rnfr = g_strdup_printf("RNFR %s", from + 1);
+  char* rnto = g_strdup_printf("RNTO %s", to + 1);
   struct buffer buf;
   buf_init(&buf, 0);
   struct curl_slist* header = NULL;
   header = curl_slist_append(header, rnfr);
   header = curl_slist_append(header, rnto);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, header);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -765,7 +772,7 @@ static int ftpfs_rename(const char* from, const char* to) {
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_QUOTE, NULL);
+  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
   
   buf_free(&buf);
   curl_slist_free_all(header);

@@ -24,6 +24,8 @@
 
 #include "cache.h"
 
+#define CURLFTPFS_SAFE_NOBODY (LIBCURL_VERSION_NUM >= 0x070f02)
+
 static char* MonthStrings[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
@@ -35,7 +37,32 @@ struct ftpfs {
   int verbose;
   int debug;
   int transform_symlinks;
-  int no_epsv;
+  int disable_epsv;
+  int tcp_nodelay;
+  int disable_eprt;
+  int connect_timeout;
+  int use_ssl;
+  char* cert;
+  char* cert_type;
+  char* key;
+  char* key_type;
+  char* key_password;
+  char* engine;
+  char* cacert;
+  char* capath;
+  char* ciphers;
+  char* interface;
+  char* krb4;
+  char *proxy;
+  int proxytunnel;
+  int proxyanyauth;
+  int proxybasic;
+  int proxydigest;
+  int proxyntlm;
+  char* user;
+  char* proxy_user;
+  int ssl_version;
+  int ip_version;
   char symlink_prefix[PATH_MAX+1];
   size_t symlink_prefix_len;
 };
@@ -237,7 +264,36 @@ enum {
 static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ftpfs_debug",        debug, 1),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
-  FTPFS_OPT("no_epsv",            no_epsv, 1),
+  FTPFS_OPT("disable_eprt",       disable_eprt, 1),
+  FTPFS_OPT("disable_epsv",       disable_epsv, 1),
+  FTPFS_OPT("disable_eprt",       disable_eprt, 1),
+  FTPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
+  FTPFS_OPT("connect_timeout=%u", connect_timeout, 0),
+  FTPFS_OPT("ssl",                use_ssl, 1),
+  FTPFS_OPT("cert=%s",            cert, 0),
+  FTPFS_OPT("cert_type=%s",       cert_type, 0),
+  FTPFS_OPT("key=%s",             key, 0),
+  FTPFS_OPT("key_type=%s",        key_type, 0),
+  FTPFS_OPT("pass=%s",            key_password, 0),
+  FTPFS_OPT("engine=%s",          engine, 0),
+  FTPFS_OPT("cacert=%s",          cacert, 0),
+  FTPFS_OPT("capath=%s",          capath, 0),
+  FTPFS_OPT("ciphers=%s",         ciphers, 0),
+  FTPFS_OPT("interface=%s",       interface, 0),
+  FTPFS_OPT("krb4=%s",            krb4, 0),
+  FTPFS_OPT("proxy=%s",           proxy, 0),
+  FTPFS_OPT("proxytunnel",        proxytunnel, 1),
+  FTPFS_OPT("proxy_anyauth",      proxyanyauth, 1),
+  FTPFS_OPT("proxy_basic",        proxybasic, 1),
+  FTPFS_OPT("proxy_digest",       proxydigest, 1),
+  FTPFS_OPT("proxy_ntlm",         proxyntlm, 1),
+  FTPFS_OPT("user=%s",            user, 0),
+  FTPFS_OPT("proxy_user=%s",      proxy_user, 0),
+  FTPFS_OPT("tlsv1",              ssl_version, CURL_SSLVERSION_TLSv1),
+  FTPFS_OPT("sslv2",              ssl_version, CURL_SSLVERSION_SSLv2),
+  FTPFS_OPT("sslv3",              ssl_version, CURL_SSLVERSION_SSLv3),
+  FTPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
+  FTPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -263,11 +319,20 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *data) {
 
 static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
   struct buffer* buf = (struct buffer*)data;
-  if (buf == NULL) return 0;
+  if (buf == NULL) return size * nmemb;
   buf_add_mem(buf, ptr, size * nmemb);
   DEBUG("read_data: %d\n", size * nmemb);
-  return size*nmemb;
+  return size * nmemb;
 }
+
+#define curl_easy_setopt_or_die(handle, option, ...) \
+  do {\
+    CURLcode res = curl_easy_setopt(handle, option, __VA_ARGS__);\
+    if (res != CURLE_OK) {\
+      fprintf(stderr, "Error setting curl: %s\n", error_buf);\
+      exit(1);\
+    }\
+  }while(0);
 
 static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
                         fuse_cache_dirfil_t filler) {
@@ -278,9 +343,8 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   DEBUG("ftpfs_getdir: %s\n", dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, dir_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
 
   curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
@@ -492,9 +556,8 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, dir_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
 
   curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
@@ -526,9 +589,8 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   DEBUG("full_path: %s\n", full_path);
   struct buffer buf;
   buf_init(&buf, 0);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
 
   int err = 0;
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
@@ -570,18 +632,17 @@ static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev) {
     return -EPERM;
 
   char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_INFILESIZE, 0);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_READFUNCTION, write_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_READDATA, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, 0);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, NULL);
 
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_UPLOAD, 0);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
 
   free(full_path);
   return err;
@@ -625,15 +686,16 @@ static int ftpfs_rmdir(const char* path) {
 
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -653,15 +715,16 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
 
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -680,15 +743,16 @@ static int ftpfs_unlink(const char* path) {
 
   header = curl_slist_append(header, cmd);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -721,11 +785,10 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   int err = 0;
   DEBUG("ftpfs_flush: %d\n", fh->buf.len);
   char* full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_INFILESIZE, fh->buf.len);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_READFUNCTION, write_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_READDATA, fh);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, fh->buf.len);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, fh);
 
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
@@ -733,7 +796,7 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   }
 
   fh->dirty = 0;
-  curl_easy_setopt(ftpfs.connection, CURLOPT_UPLOAD, 0);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
 
   free(full_path);
   return err;
@@ -764,15 +827,16 @@ static int ftpfs_rename(const char* from, const char* to) {
   header = curl_slist_append(header, rnfr);
   header = curl_slist_append(header, rnto);
 
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, ftpfs.host);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -790,9 +854,8 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, dir_path);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
 
   curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
@@ -917,8 +980,123 @@ static void usage(const char* progname) {
 "FTPFS options:\n"
 "    -o ftpfs_debug         print some debugging information\n"
 "    -o transform_symlinks  prepend mountpoint to absolute symlink targets\n"
-"    -o no_epsv             make libcurl use PASV, without trying EPSV first\n"
+"    -o disable_epsv        use PASV, without trying EPSV first\n"
+"    -o disable_eprt        use PORT, without trying EPRT first\n"
+"    -o tcp_nodelay         use the TCP_NODELAY option\n"
+"    -o connect_timeout=N   maximum time allowed for connection in seconds\n"
+"    -o ssl                 enable SSL/TLS\n"
+"    -o cert=STR            client certificate file and password (SSL)\n"
+"    -o cert_type=STR       certificate file type (DER/PEM/ENG) (SSL)\n"
+"    -o key=STR             private key file name (SSL)\n"
+"    -o key_type=STR        private key file type (DER/PEM/ENG) (SSL)\n"
+"    -o pass=STR            pass phrase for the private key (SSL)\n"
+"    -o engine=STR          crypto engine to use (SSL)\n"
+"    -o cacert=STR          CA certificate to verify peer against (SSL)\n"
+"    -o capath=STR          CA directory to verify peer against (SSL)\n"
+"    -o ciphers=STR         SSL ciphers to use (SSL)\n"
+"    -o interface=STR       specify network interface/address to use\n"
+"    -o krb4=STR            enable krb4 with specified security level\n"
+"    -o proxy=STR           use host:port HTTP proxy\n"
+"    -o proxytunnel         operate through a HTTP proxy tunnel (using CONNECT)\n"
+"    -o proxy_anyauth       pick \"any\" proxy authentication method\n"
+"    -o proxy_basic         use Basic authentication on the proxy\n"
+"    -o proxy_digest        use Digest authentication on the proxy\n"
+"    -o proxy_ntlm          use NTLM authentication on the proxy\n"
+"    -o user=STR            set server user and password\n"
+"    -o proxy_user=STR      set proxy user and password\n"
+"    -o tlsv1               use TLSv1 (SSL)\n"
+"    -o sslv2               use SSLv2 (SSL)\n"
+"    -o sslv3               use SSLv3 (SSL)\n"
+"    -o ipv4                resolve name to IPv4 address\n"
+"    -o ipv6                resolve name to IPv6 address\n"
 "\n", progname);
+}
+
+static void set_common_curl_stuff() {
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEFUNCTION, read_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READFUNCTION, write_data);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_ERRORBUFFER, error_buf);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, ftpfs.host);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
+
+  if (ftpfs.verbose) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_VERBOSE, TRUE);
+  }
+
+  if (ftpfs.disable_epsv) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_USE_EPSV, FALSE);
+  }
+
+  if (ftpfs.disable_eprt) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_USE_EPRT, FALSE);
+  }
+
+  if (ftpfs.tcp_nodelay) {
+#ifdef CURLOPT_TCP_NODELAY
+    /* CURLOPT_TCP_NODELAY is not defined in older versions */
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_TCP_NODELAY, 1);
+#endif
+  }
+
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CONNECTTIMEOUT, ftpfs.connect_timeout);
+
+  if (ftpfs.use_ssl) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_SSL, CURLFTPSSL_TRY);
+  }
+
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLCERT, ftpfs.cert);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLCERTTYPE, ftpfs.cert_type);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLKEY, ftpfs.key);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLKEYTYPE, ftpfs.key_type);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLKEYPASSWD, ftpfs.key_password);
+
+  if (ftpfs.engine) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLENGINE, ftpfs.engine);
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLENGINE_DEFAULT, 1);
+  }
+
+  if (ftpfs.cacert || ftpfs.capath) {
+    if (ftpfs.cacert) {
+      curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CAINFO, ftpfs.cacert);
+    }
+    if (ftpfs.capath) {
+      curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CAPATH, ftpfs.capath);
+    }
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYPEER, TRUE);
+  }
+
+  if (ftpfs.ciphers) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_CIPHER_LIST, ftpfs.ciphers);
+  }
+
+  /* default to strict verifyhost */
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYHOST, 2);
+
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INTERFACE, ftpfs.interface);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_KRB4LEVEL, ftpfs.krb4);
+  
+  if (ftpfs.proxy) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXY, ftpfs.proxy);
+    /* Connection to FTP servers only make sense with a tunnel proxy */
+  }
+  if (ftpfs.proxy || ftpfs.proxytunnel) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_HTTPPROXYTUNNEL, TRUE);
+  }
+
+  if (ftpfs.proxyanyauth) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+  } else if (ftpfs.proxyntlm) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXYAUTH, CURLAUTH_NTLM);
+  } else if (ftpfs.proxydigest) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXYAUTH, CURLAUTH_DIGEST);
+  } else if (ftpfs.proxybasic) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
+  }
+
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_USERPWD, ftpfs.user);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_PROXYUSERPWD, ftpfs.proxy_user);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLVERSION, ftpfs.ssl_version);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_IPRESOLVE, ftpfs.ip_version);
 }
 
 int main(int argc, char** argv) {
@@ -959,20 +1137,15 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  if (ftpfs.no_epsv) {
-    DEBUG("Not trying EPSV mode\n");
-    curl_easy_setopt(ftpfs.connection, CURLOPT_FTP_USE_EPSV, 0);
-  }
-
-  curl_easy_setopt(ftpfs.connection, CURLOPT_ERRORBUFFER, error_buf);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_URL, ftpfs.host);
-  curl_easy_setopt(ftpfs.connection, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
-  if (ftpfs.verbose) curl_easy_setopt(ftpfs.connection, CURLOPT_VERBOSE, 1);
+  set_common_curl_stuff();
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
   curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     fprintf(stderr, "Error connecting to ftp: %s\n", error_buf);
     exit(1);
   }
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
 
   res = fuse_main(args.argc, args.argv, cache_init(&ftpfs_oper));
 

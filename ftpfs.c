@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <netinet/in.h>
 #include <fuse.h>
 #include <fuse_opt.h>
@@ -24,7 +25,8 @@
 
 #include "cache.h"
 
-#define CURLFTPFS_SAFE_NOBODY (LIBCURL_VERSION_NUM >= 0x070f02)
+#define CURLFTPFS_BAD_NOBODY 0x070f02
+#define CURLFTPFS_BAD_SSL 0x070f03
 
 static char* MonthStrings[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -33,6 +35,7 @@ struct ftpfs {
   char* host;
   char* mountpoint;
   CURL* connection;
+  unsigned blksize;
   GHashTable *filetab;  
   int verbose;
   int debug;
@@ -42,6 +45,7 @@ struct ftpfs {
   int disable_eprt;
   int connect_timeout;
   int use_ssl;
+  int no_verify_hostname;
   char* cert;
   char* cert_type;
   char* key;
@@ -53,7 +57,7 @@ struct ftpfs {
   char* ciphers;
   char* interface;
   char* krb4;
-  char *proxy;
+  char* proxy;
   int proxytunnel;
   int proxyanyauth;
   int proxybasic;
@@ -65,6 +69,8 @@ struct ftpfs {
   int ip_version;
   char symlink_prefix[PATH_MAX+1];
   size_t symlink_prefix_len;
+  curl_version_info_data* curl_version;
+  int safe_nobody;
 };
 
 static struct ftpfs ftpfs;
@@ -269,7 +275,10 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("disable_eprt",       disable_eprt, 1),
   FTPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   FTPFS_OPT("connect_timeout=%u", connect_timeout, 0),
-  FTPFS_OPT("ssl",                use_ssl, 1),
+  FTPFS_OPT("ssl",                use_ssl, CURLFTPSSL_ALL),
+  FTPFS_OPT("ssl_control",        use_ssl, CURLFTPSSL_CONTROL),
+  FTPFS_OPT("ssl_try",            use_ssl, CURLFTPSSL_TRY),
+  FTPFS_OPT("no_verify_hostname", no_verify_hostname, 1),
   FTPFS_OPT("cert=%s",            cert, 0),
   FTPFS_OPT("cert_type=%s",       cert_type, 0),
   FTPFS_OPT("key=%s",             key, 0),
@@ -290,7 +299,6 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("user=%s",            user, 0),
   FTPFS_OPT("proxy_user=%s",      proxy_user, 0),
   FTPFS_OPT("tlsv1",              ssl_version, CURL_SSLVERSION_TLSv1),
-  FTPFS_OPT("sslv2",              ssl_version, CURL_SSLVERSION_SSLv2),
   FTPFS_OPT("sslv3",              ssl_version, CURL_SSLVERSION_SSLv3),
   FTPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
   FTPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
@@ -441,7 +449,14 @@ static int parse_dir(struct buffer* buf, const char* dir,
     // Advance group
     while (line[i] && !isspace(line[i])) ++i;
 
-    stat_buf.st_size = strtol(line+i, &p, 10);
+    off_t size = strtol(line+i, &p, 10);
+    stat_buf.st_size = size;
+    if (ftpfs.blksize) {
+      stat_buf.st_blksize = ftpfs.blksize;
+      stat_buf.st_blocks =
+          ((size + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
+    }
+
     i = p - line;
     ++i;
 
@@ -689,7 +704,7 @@ static int ftpfs_rmdir(const char* path) {
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
@@ -718,7 +733,7 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
@@ -746,7 +761,7 @@ static int ftpfs_unlink(const char* path) {
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
@@ -830,7 +845,7 @@ static int ftpfs_rename(const char* from, const char* to) {
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, ftpfs.host);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EPERM;
@@ -878,7 +893,7 @@ static int ftpfs_statfs(const char *path, struct statvfs *buf)
     (void) path;
 
     buf->f_namemax = 255;
-    buf->f_bsize = 512;
+    buf->f_bsize = ftpfs.blksize;
     buf->f_frsize = 512;
     buf->f_blocks = 999999999 * 2;
     buf->f_bfree =  999999999 * 2;
@@ -893,7 +908,7 @@ static int ftpfs_statfs(const char *path, struct statfs *buf)
     (void) path;
 
     buf->f_namelen = 255;
-    buf->f_bsize = 512;
+    buf->f_bsize = ftpfs.blksize;
     buf->f_blocks = 999999999 * 2;
     buf->f_bfree =  999999999 * 2;
     buf->f_bavail = 999999999 * 2;
@@ -961,7 +976,11 @@ static int ftpfs_opt_proc(void* data, const char* arg, int key,
       ftpfs.verbose = 1;
       return 0;
     case KEY_VERSION:
-      fprintf(stderr, "Version 0.2\n");
+      fprintf(stderr, "curlftpfs %s libcurl/%s fuse/%u.%u\n",
+              VERSION,
+              ftpfs.curl_version->version,
+              FUSE_MAJOR_VERSION,
+              FUSE_MINOR_VERSION);
       exit(1);
     default:
       exit(1);
@@ -984,14 +1003,17 @@ static void usage(const char* progname) {
 "    -o disable_eprt        use PORT, without trying EPRT first\n"
 "    -o tcp_nodelay         use the TCP_NODELAY option\n"
 "    -o connect_timeout=N   maximum time allowed for connection in seconds\n"
-"    -o ssl                 enable SSL/TLS\n"
+"    -o ssl                 enable SSL/TLS for both control and data connections\n"
+"    -o ssl_control         enable SSL/TLS only for control connection\n"
+"    -o ssl_try             try SSL/TLS first but connect anyway\n"
+"    -o no_verify_hostname  does not verify the hostname (SSL)\n"
 "    -o cert=STR            client certificate file and password (SSL)\n"
 "    -o cert_type=STR       certificate file type (DER/PEM/ENG) (SSL)\n"
 "    -o key=STR             private key file name (SSL)\n"
 "    -o key_type=STR        private key file type (DER/PEM/ENG) (SSL)\n"
 "    -o pass=STR            pass phrase for the private key (SSL)\n"
 "    -o engine=STR          crypto engine to use (SSL)\n"
-"    -o cacert=STR          CA certificate to verify peer against (SSL)\n"
+"    -o cacert=STR          file with CA certificates to verify the peer (SSL)\n"
 "    -o capath=STR          CA directory to verify peer against (SSL)\n"
 "    -o ciphers=STR         SSL ciphers to use (SSL)\n"
 "    -o interface=STR       specify network interface/address to use\n"
@@ -1005,7 +1027,6 @@ static void usage(const char* progname) {
 "    -o user=STR            set server user and password\n"
 "    -o proxy_user=STR      set proxy user and password\n"
 "    -o tlsv1               use TLSv1 (SSL)\n"
-"    -o sslv2               use SSLv2 (SSL)\n"
 "    -o sslv3               use SSLv3 (SSL)\n"
 "    -o ipv4                resolve name to IPv4 address\n"
 "    -o ipv6                resolve name to IPv6 address\n"
@@ -1040,9 +1061,27 @@ static void set_common_curl_stuff() {
 
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CONNECTTIMEOUT, ftpfs.connect_timeout);
 
-  if (ftpfs.use_ssl) {
-    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_SSL, CURLFTPSSL_TRY);
+  /* CURLFTPSSL_CONTROL and CURLFTPSSL_ALL should make the connection fail if
+   * the server doesn't support SSL but libcurl only honors this beginning
+   * with version 7.15.4 */
+  if (ftpfs.use_ssl > CURLFTPSSL_TRY &&
+      ftpfs.curl_version->version_num <= CURLFTPFS_BAD_SSL) {
+    fprintf(stderr,
+"WARNING: you are using libcurl %s.\n"
+"This version of libcurl does not respect the mandatory SSL flag.\n" 
+"It will try to send the user and password even if the server doesn't support\n"
+"SSL. Please upgrade to libcurl version 7.15.4 or higher.\n"
+"You can abort the connection now by pressing ctrl+c.\n",
+            ftpfs.curl_version->version);
+    int i;
+    const int time_to_wait = 10;
+    for (i = 0; i < time_to_wait; i++) {
+      fprintf(stderr, "%d.. ", time_to_wait - i);
+      sleep(1);
+    }
+    fprintf(stderr, "\n");
   }
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_SSL, ftpfs.use_ssl);
 
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLCERT, ftpfs.cert);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLCERTTYPE, ftpfs.cert_type);
@@ -1069,8 +1108,11 @@ static void set_common_curl_stuff() {
     curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_CIPHER_LIST, ftpfs.ciphers);
   }
 
-  /* default to strict verifyhost */
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYHOST, 2);
+  if (ftpfs.no_verify_hostname) {
+    /* The default is 2 which verifies even the host string. This sets to 1
+     * which means verify the host but not the string. */
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYHOST, 1);
+  }
 
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INTERFACE, ftpfs.interface);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_KRB4LEVEL, ftpfs.krb4);
@@ -1105,6 +1147,12 @@ int main(int argc, char** argv) {
   CURLcode curl_res;
 
   memset(&ftpfs, 0, sizeof(ftpfs));
+
+  ftpfs.curl_version = curl_version_info(CURLVERSION_NOW);
+  ftpfs.safe_nobody = ftpfs.curl_version->version_num > CURLFTPFS_BAD_NOBODY;
+  
+  ftpfs.blksize = 4096;
+  
   if (fuse_opt_parse(&args, &ftpfs, ftpfs_opts, ftpfs_opt_proc) == -1)
     exit(1);
 
@@ -1139,7 +1187,7 @@ int main(int argc, char** argv) {
 
   set_common_curl_stuff();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, NULL);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, CURLFTPFS_SAFE_NOBODY);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     fprintf(stderr, "Error connecting to ftp: %s\n", error_buf);

@@ -19,61 +19,16 @@
 #include <netinet/in.h>
 #include <fuse.h>
 #include <fuse_opt.h>
-#include <curl/curl.h>
-#include <curl/easy.h>
 #include <glib.h>
 
+#include "ftpfs-ls.h"
 #include "cache.h"
+#include "ftpfs.h"
 
 #define CURLFTPFS_BAD_NOBODY 0x070f02
 #define CURLFTPFS_BAD_SSL 0x070f03
 
-static char* MonthStrings[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-
-struct ftpfs {
-  char* host;
-  char* mountpoint;
-  CURL* connection;
-  unsigned blksize;
-  GHashTable *filetab;  
-  int verbose;
-  int debug;
-  int transform_symlinks;
-  int disable_epsv;
-  int tcp_nodelay;
-  int disable_eprt;
-  int connect_timeout;
-  int use_ssl;
-  int no_verify_hostname;
-  char* cert;
-  char* cert_type;
-  char* key;
-  char* key_type;
-  char* key_password;
-  char* engine;
-  char* cacert;
-  char* capath;
-  char* ciphers;
-  char* interface;
-  char* krb4;
-  char* proxy;
-  int proxytunnel;
-  int proxyanyauth;
-  int proxybasic;
-  int proxydigest;
-  int proxyntlm;
-  char* user;
-  char* proxy_user;
-  int ssl_version;
-  int ip_version;
-  char symlink_prefix[PATH_MAX+1];
-  size_t symlink_prefix_len;
-  curl_version_info_data* curl_version;
-  int safe_nobody;
-};
-
-static struct ftpfs ftpfs;
+struct ftpfs ftpfs;
 static char error_buf[CURL_ERROR_SIZE];
 
 struct buffer {
@@ -84,13 +39,6 @@ struct buffer {
 
 static void usage(const char* progname);
 static char* get_dir_path(const char* path, int strip);
-static int parse_dir(struct buffer* buf, const char* dir,
-                     const char* name, struct stat* sbuf,
-                     char* linkbuf, int linklen,
-                     fuse_cache_dirh_t h, fuse_cache_dirfil_t filler);
-
-#define DEBUG(args...) \
-        do { if (ftpfs.debug) fprintf(stderr, args); } while(0)
 
 static inline void buf_init(struct buffer* buf, size_t size)
 {
@@ -344,7 +292,6 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
 
 static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
                         fuse_cache_dirfil_t filler) {
-  int err;
   CURLcode curl_res;
   char* dir_path = get_dir_path(path, 0);
 
@@ -360,7 +307,7 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   }
   buf_add_mem(&buf, "\0", 1);
 
-  err = parse_dir(&buf, dir_path + strlen(ftpfs.host) - 1, NULL, NULL, NULL, 0, h, filler); 
+  parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, NULL, NULL, NULL, 0, h, filler); 
 
   free(dir_path);
   buf_free(&buf);
@@ -386,183 +333,6 @@ static char* get_dir_path(const char* path, int strip) {
   return ret;
 }
 
-static int parse_dir(struct buffer* buf, const char* dir,
-                     const char* name, struct stat* sbuf,
-                     char* linkbuf, int linklen,
-                     fuse_cache_dirh_t h, fuse_cache_dirfil_t filler) {
-  char *start = buf->p;
-  char *end = buf->p;
-  char found = 0;
-
-  if (sbuf) memset(sbuf, 0, sizeof(struct stat));
-
-  if (name && sbuf && name[0] == '\0') {
-    sbuf->st_mode |= S_IFDIR;
-    sbuf->st_mode |= 0755;
-    sbuf->st_size = 1024;
-    return 0;
-  }
-
-  while ((end = strchr(start, '\n')) != NULL)
-  {
-    char* line;
-    char* file;
-    struct stat stat_buf;
-    memset(&stat_buf, 0, sizeof(stat_buf));
-
-    if (end > start && *(end-1) == '\r') end--;
-    
-    line = (char*)malloc(end - start + 1);
-    strncpy(line, start, end - start);
-    line[end - start] = '\0';
-    start = *end == '\r' ? end + 2 : end + 1;
-
-    if (!strncmp(line, "total", 5)) continue;
-
-    int i = 0;
-    char *p;
-    if (line[i] == 'd') {
-      stat_buf.st_mode |= S_IFDIR;
-    } else if (line[i] == 'l') {
-      stat_buf.st_mode |= S_IFLNK;
-    } else {
-      stat_buf.st_mode |= S_IFREG;
-    }
-    for (i = 1; i < 10; ++i) {
-      if (line[i] != '-') {
-        stat_buf.st_mode |= 1 << (9 - i);
-	}
-    }
-
-    // Advance whitespace
-    while (line[i] && isspace(line[i])) ++i;
-
-    stat_buf.st_nlink = strtol(line+i, &p, 10);
-    i = p - line;
-
-    // Advance whitespace
-    while (line[i] && isspace(line[i])) ++i;
-    // Advance username
-    while (line[i] && !isspace(line[i])) ++i;
-    // Advance whitespace
-    while (line[i] && isspace(line[i])) ++i;
-    // Advance group
-    while (line[i] && !isspace(line[i])) ++i;
-
-    off_t size = strtol(line+i, &p, 10);
-    stat_buf.st_size = size;
-    if (ftpfs.blksize) {
-      stat_buf.st_blksize = ftpfs.blksize;
-      stat_buf.st_blocks =
-          ((size + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
-    }
-
-    i = p - line;
-    ++i;
-
-    // Date
-    int month;
-    for (month = 0; month < 12; ++month) {
-      if (!strncmp(MonthStrings[month], line+i, 3)) break;
-    }
-    if (month < 12) {
-      i += 3;
-      int day = strtol(line+i, &p, 10);
-      if (p != line+i) {
-        i = p - line;
-	int year_or_hour = strtol(line+i, &p, 10);
-	struct tm current_time;
-	time_t now = time(NULL);
-	localtime_r(&now, &current_time);
-	if (p != line+i) {
-	  i = p - line;
-	  struct tm parsed_time;
-	  memset(&parsed_time, 0, sizeof(parsed_time));
-	  if (*p == ':') {
-	    // Hour
-	    ++i;
-	    int minute = strtol(line+i, &p, 10);
-	    i = p - line;
-	    parsed_time.tm_mday = day;
-	    parsed_time.tm_mon = month;
-	    parsed_time.tm_year = current_time.tm_year;
-	    parsed_time.tm_hour = year_or_hour;
-	    parsed_time.tm_min = minute;
-	    stat_buf.st_atime = mktime(&parsed_time);
-	    if (stat_buf.st_atime > now) {
-	      parsed_time.tm_year--;
-	      stat_buf.st_atime = mktime(&parsed_time);
-	    }
-	    stat_buf.st_mtime = stat_buf.st_atime;
-	    stat_buf.st_ctime = stat_buf.st_atime;
-	  } else {
-	    // Year
-	    parsed_time.tm_mday = day;
-	    parsed_time.tm_mon = month;
-	    parsed_time.tm_year = year_or_hour - 1900;
-	    stat_buf.st_atime = mktime(&parsed_time);
-	    stat_buf.st_mtime = stat_buf.st_atime;
-	    stat_buf.st_ctime = stat_buf.st_atime;
-	  }
-	}
-      }
-    }
-
-    // Symbolic links
-    const char* link = strstr(line, " -> "); 
-
-    file = line + i + 1;
-    if (link) {
-      file = g_strndup(file, link - file);
-    } else {
-      file = g_strdup(file);
-    }
-    DEBUG("%s\n", file);
-
-    char *full_path = g_strdup_printf("%s%s", dir, file);
-    
-    if (link) {
-      link += 4;
-      char *reallink;
-      if (link[0] == '/' && ftpfs.symlink_prefix_len) {
-        reallink = g_strdup_printf("%s%s", ftpfs.symlink_prefix, link);
-      } else {
-        reallink = g_strdup(link);
-      }
-      int linksize = strlen(reallink);
-      cache_add_link(full_path, reallink, linksize+1);
-      DEBUG("cache_add_link: %s %s\n", full_path, reallink);
-      if (linkbuf && linklen) {
-        if (linksize > linklen) linksize = linklen - 1;
-        strncpy(linkbuf, reallink, linksize);
-        linkbuf[linksize] = '\0';
-      }
-      free(reallink);
-    }
-
-
-    if (h && filler) {
-      DEBUG("filler: %s\n", file);
-      filler(h, file, &stat_buf);
-    } else {
-      DEBUG("cache_add_attr: %s\n", full_path);
-      cache_add_attr(full_path, &stat_buf);
-    }
-
-    if (name && !strcmp(name, file)) {
-      if (sbuf) *sbuf = stat_buf;
-      found = 1;
-    }
-    
-    free(full_path);
-    free(line);
-    free(file);
-  }
-
-  if (found) return 0;
-  return -ENOENT;
-}
-
 static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   int err;
   CURLcode curl_res;
@@ -582,11 +352,12 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
 
   char* name = strrchr(path, '/');
   ++name;
-  err = parse_dir(&buf, dir_path + strlen(ftpfs.host) - 1, name, sbuf, NULL, 0, NULL, NULL); 
+  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, name, sbuf, NULL, 0, NULL, NULL); 
 
   free(dir_path);
   buf_free(&buf);
-  return err;
+  if (err) return -ENOENT;
+  return 0;
 }
 
 static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
@@ -880,11 +651,12 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
 
   char* name = strrchr(path, '/');
   ++name;
-  err = parse_dir(&buf, dir_path + strlen(ftpfs.host) - 1, name, NULL, linkbuf, size, NULL, NULL); 
+  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, name, NULL, linkbuf, size, NULL, NULL); 
 
   free(dir_path);
   buf_free(&buf);
-  return err;
+  if (err) return -ENOENT;
+  return 0;
 }
 
 #if FUSE_VERSION >= 25

@@ -20,9 +20,9 @@ LIBS="$GLIB_LIBS $FUSE_LIBS $LIBCURL"
 have_fuse_opt_parse=no
 AC_CHECK_FUNC([fuse_opt_parse], [have_fuse_opt_parse=yes])
 if test "$have_fuse_opt_parse" = no; then
-	CFLAGS="$CFLAGS -Icompat"
+	CFLAGS="$CFLAGS -Icompat -I../compat"
 fi
 AM_CONDITIONAL(FUSE_OPT_COMPAT, test "$have_fuse_opt_parse" = no)
 
-AC_CONFIG_FILES([Makefile compat/Makefile])
+AC_CONFIG_FILES([Makefile compat/Makefile tests/Makefile])
 AC_OUTPUT

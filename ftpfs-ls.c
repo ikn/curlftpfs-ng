@@ -139,6 +139,10 @@ static int parse_dir_netware(const char *line,
                              struct stat *sbuf,
                              char *file,
                              char *link) {
+  (void) line;
+  (void) sbuf;
+  (void) file;
+  (void) link;
   return 0;
 }
 

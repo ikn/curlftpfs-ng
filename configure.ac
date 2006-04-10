@@ -1,4 +1,4 @@
-AC_INIT(curlftpfs, 0.5)
+AC_INIT(curlftpfs, 0.6)
 AM_INIT_AUTOMAKE
 AM_CONFIG_HEADER(config.h)
 

@@ -824,7 +824,9 @@ static void set_common_curl_stuff() {
   }
 
   if (ftpfs.skip_pasv_ip) {
+#ifdef CURLOPT_FTP_SKIP_PASV_IP
     curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_SKIP_PASV_IP, TRUE);
+#endif
   }
 
   if (ftpfs.ftp_port) {

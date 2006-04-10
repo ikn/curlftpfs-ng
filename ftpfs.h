@@ -15,7 +15,9 @@ struct ftpfs {
   int debug;
   int transform_symlinks;
   int disable_epsv;
+  int skip_pasv_ip;
   int tcp_nodelay;
+  char* ftp_port;
   int disable_eprt;
   int connect_timeout;
   int use_ssl;

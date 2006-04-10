@@ -218,8 +218,9 @@ enum {
 static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ftpfs_debug",        debug, 1),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
-  FTPFS_OPT("disable_eprt",       disable_eprt, 1),
   FTPFS_OPT("disable_epsv",       disable_epsv, 1),
+  FTPFS_OPT("skip_pasv_ip",       skip_pasv_ip, 1),
+  FTPFS_OPT("ftp_port=%s",        ftp_port, 0),
   FTPFS_OPT("disable_eprt",       disable_eprt, 1),
   FTPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   FTPFS_OPT("connect_timeout=%u", connect_timeout, 0),
@@ -772,6 +773,8 @@ static void usage(const char* progname) {
 "    -o ftpfs_debug         print some debugging information\n"
 "    -o transform_symlinks  prepend mountpoint to absolute symlink targets\n"
 "    -o disable_epsv        use PASV, without trying EPSV first\n"
+"    -o skip_pasv_ip        skip the IP address for PASV\n"
+"    -o ftp_port=STR        use PORT with address instead of PASV\n"
 "    -o disable_eprt        use PORT, without trying EPRT first\n"
 "    -o tcp_nodelay         use the TCP_NODELAY option\n"
 "    -o connect_timeout=N   maximum time allowed for connection in seconds\n"
@@ -818,6 +821,14 @@ static void set_common_curl_stuff() {
 
   if (ftpfs.disable_epsv) {
     curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_USE_EPSV, FALSE);
+  }
+
+  if (ftpfs.skip_pasv_ip) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTP_SKIP_PASV_IP, TRUE);
+  }
+
+  if (ftpfs.ftp_port) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_FTPPORT, ftpfs.ftp_port);
   }
 
   if (ftpfs.disable_eprt) {

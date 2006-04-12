@@ -734,7 +734,11 @@ static int ftpfs_opt_proc(void* data, const char* arg, int key,
       return 1;
     case FUSE_OPT_KEY_NONOPT:
       if (!ftpfs.host) {
-        ftpfs.host = g_strdup_printf("%s%s", arg, 
+        const char* prefix = "";
+        if (strncmp(arg, "ftp://", 6)) {
+          prefix = "ftp://";
+        }
+        ftpfs.host = g_strdup_printf("%s%s%s", prefix, arg, 
 			arg[strlen(arg)-1] == '/' ? "" : "/");
         return 0;
       } else if (!ftpfs.mountpoint)

@@ -164,6 +164,7 @@ int parse_dir(const char* list, const char* dir,
     sbuf->st_mode |= S_IFDIR;
     sbuf->st_mode |= 0755;
     sbuf->st_size = 1024;
+    sbuf->st_nlink = 1;
     return 0;
   }
 

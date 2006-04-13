@@ -24,5 +24,5 @@ if test "$have_fuse_opt_parse" = no; then
 fi
 AM_CONDITIONAL(FUSE_OPT_COMPAT, test "$have_fuse_opt_parse" = no)
 
-AC_CONFIG_FILES([Makefile compat/Makefile tests/Makefile])
+AC_CONFIG_FILES([Makefile compat/Makefile tests/Makefile doc/Makefile])
 AC_OUTPUT

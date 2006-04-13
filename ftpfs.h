@@ -4,10 +4,12 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <glib.h>
+#include <pthread.h>
 
 struct ftpfs {
   char* host;
   char* mountpoint;
+  pthread_mutex_t lock;
   CURL* connection;
   unsigned blksize;
   GHashTable *filetab;  

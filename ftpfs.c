@@ -299,10 +299,13 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   DEBUG("ftpfs_getdir: %s\n", dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-
   curl_res = curl_easy_perform(ftpfs.connection);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     DEBUG("%s\n", error_buf);
   }
@@ -342,10 +345,13 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-
   curl_res = curl_easy_perform(ftpfs.connection);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     DEBUG("%s\n", error_buf);
   }
@@ -375,11 +381,12 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   
   DEBUG("full_path: %s\n", full_path);
   struct buffer buf;
+  int err = 0;
   buf_init(&buf, 0);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-
-  int err = 0;
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
   if (curl_res != 0) {
     err = -EACCES;
@@ -392,6 +399,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
     fh->copied = 0;
     fi->fh = (unsigned long) fh;
   }
+  pthread_mutex_unlock(&ftpfs.lock);
 
   free(full_path);
   return err;
@@ -419,17 +427,19 @@ static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev) {
     return -EPERM;
 
   char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, 0);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, NULL);
-
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
-
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
 
   free(full_path);
   return err;
@@ -473,16 +483,19 @@ static int ftpfs_rmdir(const char* path) {
 
   header = curl_slist_append(header, cmd);
 
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -502,16 +515,19 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
 
   header = curl_slist_append(header, cmd);
 
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -530,16 +546,19 @@ static int ftpfs_unlink(const char* path) {
 
   header = curl_slist_append(header, cmd);
 
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -572,18 +591,21 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   int err = 0;
   DEBUG("ftpfs_flush: %d\n", fh->buf.len);
   char* full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, fh->buf.len);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, fh);
-
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
 
   fh->dirty = 0;
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
 
   free(full_path);
   return err;
@@ -614,16 +636,19 @@ static int ftpfs_rename(const char* from, const char* to) {
   header = curl_slist_append(header, rnfr);
   header = curl_slist_append(header, rnto);
 
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, ftpfs.host);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, ftpfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     err = -EPERM;
   }
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
   
   buf_free(&buf);
   curl_slist_free_all(header);
@@ -641,10 +666,13 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
+
+  pthread_mutex_lock(&ftpfs.lock);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
-
   curl_res = curl_easy_perform(ftpfs.connection);
+  pthread_mutex_unlock(&ftpfs.lock);
+
   if (curl_res != 0) {
     DEBUG("%s\n", error_buf);
   }
@@ -983,6 +1011,8 @@ int main(int argc, char** argv) {
     exit(1);
   }
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_NOBODY, 0);
+
+  pthread_mutex_init(&ftpfs.lock, NULL);
 
   res = fuse_main(args.argc, args.argv, cache_init(&ftpfs_oper));
 

@@ -763,7 +763,7 @@ static int ftpfs_opt_proc(void* data, const char* arg, int key,
     case FUSE_OPT_KEY_NONOPT:
       if (!ftpfs.host) {
         const char* prefix = "";
-        if (strncmp(arg, "ftp://", 6)) {
+        if (strncmp(arg, "ftp://", 6) && strncmp(arg, "ftps://", 7)) {
           prefix = "ftp://";
         }
         ftpfs.host = g_strdup_printf("%s%s%s", prefix, arg, 

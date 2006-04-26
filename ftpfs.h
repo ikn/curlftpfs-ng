@@ -24,6 +24,7 @@ struct ftpfs {
   int connect_timeout;
   int use_ssl;
   int no_verify_hostname;
+  int no_verify_peer;
   char* cert;
   char* cert_type;
   char* key;

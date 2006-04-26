@@ -228,6 +228,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ssl_control",        use_ssl, CURLFTPSSL_CONTROL),
   FTPFS_OPT("ssl_try",            use_ssl, CURLFTPSSL_TRY),
   FTPFS_OPT("no_verify_hostname", no_verify_hostname, 1),
+  FTPFS_OPT("no_verify_peer",     no_verify_peer, 1),
   FTPFS_OPT("cert=%s",            cert, 0),
   FTPFS_OPT("cert_type=%s",       cert_type, 0),
   FTPFS_OPT("key=%s",             key, 0),
@@ -815,6 +816,7 @@ static void usage(const char* progname) {
 "    ssl_control         enable SSL/TLS only for control connection\n"
 "    ssl_try             try SSL/TLS first but connect anyway\n"
 "    no_verify_hostname  does not verify the hostname (SSL)\n"
+"    no_verify_peer      does not verify the peer (SSL)\n"
 "    cert=STR            client certificate file (SSL)\n"
 "    cert_type=STR       certificate file type (DER/PEM/ENG) (SSL)\n"
 "    key=STR             private key file name (SSL)\n"
@@ -912,6 +914,11 @@ static void set_common_curl_stuff() {
     curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSLENGINE_DEFAULT, 1);
   }
 
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYPEER, TRUE);
+  if (ftpfs.no_verify_peer) {
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYPEER, FALSE);
+  }
+
   if (ftpfs.cacert || ftpfs.capath) {
     if (ftpfs.cacert) {
       curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CAINFO, ftpfs.cacert);
@@ -919,7 +926,6 @@ static void set_common_curl_stuff() {
     if (ftpfs.capath) {
       curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_CAPATH, ftpfs.capath);
     }
-    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_SSL_VERIFYPEER, TRUE);
   }
 
   if (ftpfs.ciphers) {

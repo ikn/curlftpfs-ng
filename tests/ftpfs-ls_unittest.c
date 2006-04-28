@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#define _XOPEN_SOURCE /* glibc2 needs this */
+#include <time.h>                                                        
 
 struct ftpfs ftpfs;
 
@@ -15,16 +17,16 @@ struct ftpfs ftpfs;
   memset(&tm, 0, sizeof(tm)); \
   strptime(date, "%H:%M:%S %d/%m/%Y", &tm); \
   tt = mktime(&tm); \
-  assert(sbuf.st_dev == dev); \
-  assert(sbuf.st_ino == ino); \
-  assert(sbuf.st_mode == mode); \
-  assert(sbuf.st_nlink == nlink); \
-  assert(sbuf.st_uid == uid); \
-  assert(sbuf.st_gid == gid); \
-  assert(sbuf.st_rdev == rdev); \
-  assert(sbuf.st_size == size); \
-  assert(sbuf.st_blksize == blksize); \
-  assert(sbuf.st_blocks == blocks); \
+  assert(sbuf.st_dev == (dev)); \
+  assert(sbuf.st_ino == (ino)); \
+  assert(sbuf.st_mode == (mode)); \
+  assert(sbuf.st_nlink == (nlink)); \
+  assert(sbuf.st_uid == (uid)); \
+  assert(sbuf.st_gid == (gid)); \
+  assert(sbuf.st_rdev == (rdev)); \
+  assert(sbuf.st_size == (size)); \
+  assert(sbuf.st_blksize == (blksize)); \
+  assert(sbuf.st_blocks == (blocks)); \
   assert(sbuf.st_atime == tt); \
   assert(sbuf.st_ctime == tt); \
   assert(sbuf.st_mtime == tt); \
@@ -32,17 +34,19 @@ struct ftpfs ftpfs;
 
 int main(int argc, char **argv) {
   const char *list;
+  char line[256];
   struct fuse_cache_operations dummy_oper;
   struct stat sbuf;
   int err;
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
   char linkbuf[1024];
-  char year[5];
   char date[20];
   time_t tt;
+  struct tm tm;
+  struct tm test_tm;
 
   tt = time(NULL);
-  strftime(year, 5, "%Y", gmtime(&tt));
+  gmtime_r(&tt, &tm);
   ftpfs.blksize = 4096;
 
   memset(&dummy_oper, 0, sizeof(dummy_oper));
@@ -79,10 +83,18 @@ int main(int argc, char **argv) {
   assert(!strcmp(linkbuf, "Science/molbio"));
   check(sbuf, 0, 0, S_IFLNK|S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IWGRP|S_IXGRP|S_IROTH|S_IWOTH|S_IXOTH, 1, 0, 0, 0, 14, 4096, 8, "00:00:00 12/03/2004");
 
-  list = "drwxr-xr-x  4 robson users   4096 Apr  3 15:50 tests\r\n";
-  err = parse_dir(list, "/", "tests", &sbuf, NULL, 0, NULL, NULL);
+  // Test a date six months in the past
+  test_tm = tm;
+  test_tm.tm_mon -= 6;
+  if (test_tm.tm_mon < 0) {
+    test_tm.tm_mon += 12;
+    test_tm.tm_year--;
+  }
+  strftime(line, 256,
+           "drwxr-xr-x  4 robson users   4096 %b %d 00:00 tests\r\n", &test_tm);
+  err = parse_dir(line, "/", "tests", &sbuf, NULL, 0, NULL, NULL);
   assert(err == 0);
-  sprintf(date, "15:50:00 03/04/%s", year);
+  strftime(date, 20, "00:00:00 %d/%m/%Y", &test_tm);
   check(sbuf, 0, 0, S_IFDIR|S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH, 4, 0, 0, 0, 4096, 4096, 8, date);
 
   list = "dr-xr-xr-x   2 root     512 Apr  8  1994 etc\r\n";
@@ -90,10 +102,14 @@ int main(int argc, char **argv) {
   assert(err == 0);
   check(sbuf, 0, 0, S_IFDIR|S_IRUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH, 2, 0, 0, 0, 512, 4096, 8, "00:00:00 08/04/1994");
 
-  list = "----------   1 owner    group         1803128 Jul 10 10:18 ls-lR.Z\r\n";
-  err = parse_dir(list, "/", "ls-lR.Z", &sbuf, NULL, 0, NULL, NULL);
+  // Test a date a little bit in the past
+  test_tm = tm;
+  strftime(line, 256,
+           "----------  1 robson users   1803128 %b %d 00:00 ls-lR.Z\r\n",
+           &test_tm);
+  err = parse_dir(line, "/", "ls-lR.Z", &sbuf, NULL, 0, NULL, NULL);
   assert(err == 0);
-  sprintf(date, "10:18:00 10/07/%s", year);
+  strftime(date, 20, "00:00:00 %d/%m/%Y", &test_tm);
   check(sbuf, 0, 0, S_IFREG, 1, 0, 0, 0, 1803128, 4096, 3528, date);
 
   return 0;

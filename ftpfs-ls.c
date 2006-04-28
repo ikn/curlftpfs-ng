@@ -75,10 +75,17 @@ static int parse_dir_unix(const char *line,
   tt = time(NULL);
   gmtime_r(&tt, &tm);
   tm.tm_sec = tm.tm_min = tm.tm_hour = 0;
-  if(strchr(year, ':'))
+  if(strchr(year, ':')) {
+    int cur_mon = tm.tm_mon;  // save current month
     strptime(date, "%H:%M,%b,%d", &tm);
-  else
+    // Unix systems omit the year for the last six months
+    if (cur_mon + 5 < tm.tm_mon) {  // month from last year
+      DEBUG("correct year: cur_mon: %d, file_mon: %d\n", cur_mon, tm.tm_mon);
+      tm.tm_year--;  // correct the year
+    }
+  } else {
     strptime(date, "%Y,%b,%d", &tm);
+  }
 
   sbuf->st_atime = sbuf->st_ctime = sbuf->st_mtime = mktime(&tm);
 

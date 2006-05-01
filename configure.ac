@@ -9,7 +9,7 @@ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 PKG_CHECK_MODULES(GLIB, [glib-2.0])
 PKG_CHECK_MODULES(FUSE, [fuse >= 2.2])
 
-LIBCURL_CHECK_CONFIG([yes], [7.7.2], [], [AC_MSG_ERROR(["libcurl not found"])])
+LIBCURL_CHECK_CONFIG([yes], [7.15.2], [], [AC_MSG_ERROR(["libcurl not found"])])
 if test "$libcurl_protocol_FTP" != yes; then
 	AC_MSG_ERROR(["We need libcurl with support for FTP protocol."])
 fi

@@ -3,6 +3,7 @@
 
 #include <curl/curl.h>
 #include <curl/easy.h>
+#include <pthread.h>
 #include <glib.h>
 #include <pthread.h>
 
@@ -11,6 +12,8 @@ struct ftpfs {
   char* mountpoint;
   pthread_mutex_t lock;
   CURL* connection;
+  CURLM* multi;
+  struct ftpfs_file* current_fh;
   unsigned blksize;
   GHashTable *filetab;  
   int verbose;

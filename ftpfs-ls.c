@@ -229,6 +229,8 @@ int parse_dir(const char* list, const char* dir,
         if (sbuf) *sbuf = stat_buf;
         found = 1;
       }
+
+      free(full_path);
     }
 
     free(line);

@@ -533,6 +533,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
     }
   }
 
+  free(full_path);
   return err;
 }
 
@@ -1172,7 +1173,9 @@ int main(int argc, char** argv) {
 
   res = fuse_main(args.argc, args.argv, cache_init(&ftpfs_oper));
 
+  curl_multi_remove_handle(ftpfs.multi, easy);
   curl_easy_cleanup(easy);
+  curl_multi_cleanup(ftpfs.multi);
   curl_global_cleanup();
 
   return res;

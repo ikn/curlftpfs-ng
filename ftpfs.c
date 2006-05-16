@@ -375,35 +375,38 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   return 0;
 }
 
+static int check_running() {
+  int running_handles = 0;
+  curl_multi_perform(ftpfs.multi, &running_handles);
+  return running_handles;
+}
+
 static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
                                size_t size, off_t offset,
                                struct fuse_file_info* fi,
                                int update_offset) {
-  int running_handles;
+  int running_handles = 0;
   int err = 0;
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
 
-  DEBUG("ftpfs_read_chunk: %s %p %d %lld %p\n",
-        full_path, rbuf, size, offset, fi);
+  DEBUG("ftpfs_read_chunk: %s %p %d %lld %p %p\n",
+        full_path, rbuf, size, offset, fi, fh);
 
   pthread_mutex_lock(&ftpfs.lock);
 
-  DEBUG("buffer size: %d\n", fh->buf.len);
+  DEBUG("buffer size: %d %lld\n", fh->buf.len, fh->buf.begin_offset);
 
   if ((fh->buf.len < size + offset - fh->buf.begin_offset) ||
       offset < fh->buf.begin_offset ||
       offset > fh->buf.begin_offset + fh->buf.len) {
     // We can't answer this from cache
-    curl_multi_perform(ftpfs.multi, &running_handles);
-
     if (ftpfs.current_fh != fh ||
-        running_handles == 0 ||
         offset < fh->buf.begin_offset ||
-        offset > fh->buf.begin_offset + fh->buf.len) {
+        offset > fh->buf.begin_offset + fh->buf.len ||
+        !check_running()) {
       DEBUG("We need to restart the connection\n");
       DEBUG("%p %p\n", ftpfs.current_fh, fh);
-      DEBUG("%d\n", running_handles);
-      DEBUG("%lld %lld\n", fh->last_offset, offset);
+      DEBUG("%lld %lld\n", fh->buf.begin_offset, offset);
 
       buf_clear(&fh->buf);
       fh->buf.begin_offset = offset;

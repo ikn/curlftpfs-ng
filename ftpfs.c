@@ -30,6 +30,8 @@
 
 #define CURLFTPFS_BAD_READ ((size_t)-1)
 
+#define MAX_BUFFER_LEN (300*1024)
+
 struct ftpfs ftpfs;
 static char error_buf[CURL_ERROR_SIZE];
 
@@ -210,6 +212,7 @@ struct ftpfs_file {
   int dirty;
   int copied;
   off_t last_offset;
+  int can_shrink;
 };
 
 enum {
@@ -425,6 +428,9 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
 
     while(CURLM_CALL_MULTI_PERFORM ==
         curl_multi_perform(ftpfs.multi, &running_handles));
+
+    curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_RANGE, NULL);
+
     while ((fh->buf.len < size + offset - fh->buf.begin_offset) &&
         running_handles) {
       struct timeval timeout;
@@ -487,6 +493,17 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
     fh->last_offset = offset + size;
   }
 
+  // Check if the buffer is growing and we can delete a part of it
+  if (fh->can_shrink && fh->buf.len > MAX_BUFFER_LEN) {
+    DEBUG("Shrinking buffer from %d to %d bytes\n",
+          fh->buf.len, to_copy - size);
+    memmove(fh->buf.p,
+            fh->buf.p + offset - fh->buf.begin_offset + size,
+            to_copy - size);
+    fh->buf.len = to_copy - size;
+    fh->buf.begin_offset = offset + size;
+  }
+
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (err) return CURLFTPFS_BAD_READ;
@@ -504,12 +521,14 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   fh->dirty = 0;
   fh->copied = 0;
   fh->last_offset = 0;
+  fh->can_shrink = 0;
   fi->fh = (unsigned long) fh;
 
   if ((fi->flags & O_ACCMODE) == O_RDONLY) {
     // If it's read-only, we can load the file a bit at a time, as necessary.
     DEBUG("opening %s O_RDONLY\n", path);
-    size_t size = ftpfs_read_chunk(full_path, NULL, 4096, 0, fi, 0);
+    fh->can_shrink = 1;
+    size_t size = ftpfs_read_chunk(full_path, NULL, 1, 0, fi, 0);
 
     if (size == CURLFTPFS_BAD_READ) {
       err = -EACCES;

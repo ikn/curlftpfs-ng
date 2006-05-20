@@ -1,3 +1,11 @@
+/*
+    FTP file system
+    Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
+
+    This program can be distributed under the terms of the GNU GPL.
+    See the file COPYING.
+*/
+
 #include "ftpfs.h"
 #include "ftpfs-ls.h"
 #include <stdlib.h>

@@ -1,3 +1,11 @@
+/*
+    FTP file system
+    Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
+
+    This program can be distributed under the terms of the GNU GPL.
+    See the file COPYING.
+*/
+
 #define _XOPEN_SOURCE
 #include <time.h>
 #include <string.h>

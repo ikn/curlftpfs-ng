@@ -302,6 +302,7 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
 
 static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
                         fuse_cache_dirfil_t filler) {
+  int err = 0;
   CURLcode curl_res;
   char* dir_path = get_dir_path(path, 0);
 
@@ -318,14 +319,15 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
 
   if (curl_res != 0) {
     DEBUG("%s\n", error_buf);
+    err = -EIO;
+  } else {
+    buf_add_mem(&buf, "\0", 1);
+    parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, NULL, NULL, NULL, 0, h, filler); 
   }
-  buf_add_mem(&buf, "\0", 1);
-
-  parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, NULL, NULL, NULL, 0, h, filler); 
 
   free(dir_path);
   buf_free(&buf);
-  return 0;
+  return err;
 }
 
 static char* get_dir_path(const char* path, int strip) {
@@ -561,9 +563,15 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
 
 static int ftpfs_read(const char* path, char* rbuf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
+  int ret;
   char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
-  int ret = ftpfs_read_chunk(full_path, rbuf, size, offset, fi, 1);
+  size_t size_read = ftpfs_read_chunk(full_path, rbuf, size, offset, fi, 1);
   free(full_path);
+  if (size_read == CURLFTPFS_BAD_READ) {
+    ret = -EIO;
+  } else {
+    ret = size_read;
+  }
   return ret;
 }
 

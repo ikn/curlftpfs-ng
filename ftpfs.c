@@ -1018,6 +1018,7 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_URL, ftpfs.host);
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
+  curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, "LIST -a");
 
   if (ftpfs.verbose) {
     curl_easy_setopt_or_die(easy, CURLOPT_VERBOSE, TRUE);

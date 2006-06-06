@@ -61,6 +61,7 @@ struct ftpfs {
   size_t symlink_prefix_len;
   curl_version_info_data* curl_version;
   int safe_nobody;
+  int tryutf8;
 };
 
 extern struct ftpfs ftpfs;

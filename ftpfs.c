@@ -260,6 +260,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("sslv3",              ssl_version, CURL_SSLVERSION_SSLv3),
   FTPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
   FTPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
+  FTPFS_OPT("utf8",               tryutf8, 1),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -1008,6 +1009,7 @@ static void usage(const char* progname) {
 "    sslv3               use SSLv3 (SSL)\n"
 "    ipv4                resolve name to IPv4 address\n"
 "    ipv6                resolve name to IPv6 address\n"
+"    utf8                try to transfer file list with utf-8 encoding\n"
 "\n", progname);
 }
 
@@ -1019,6 +1021,19 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
   curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, "LIST -a");
+
+  if (ftpfs.tryutf8) {
+    // We'll let the slist leak, as it will still be accessible within
+    // libcurl. If we ever want to add more commands to CURLOPT_QUOTE, we'll
+    // have to think of a better strategy.
+    struct curl_slist *slist = NULL;
+
+    // Adding the QUOTE here will make this command be sent with every request.
+    // This is necessary to ensure that the server is still in UTF8 mode after
+    // we get disconnected and automatically reconnect.
+    slist = curl_slist_append(slist, "OPTS UTF8 ON");
+    curl_easy_setopt_or_die(easy, CURLOPT_QUOTE, slist);
+  }
 
   if (ftpfs.verbose) {
     curl_easy_setopt_or_die(easy, CURLOPT_VERBOSE, TRUE);

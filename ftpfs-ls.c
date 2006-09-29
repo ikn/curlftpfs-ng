@@ -6,7 +6,7 @@
     See the file COPYING.
 */
 
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
 #include <time.h>
 #include <string.h>
 #include <sys/types.h>

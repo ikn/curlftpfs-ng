@@ -6,14 +6,15 @@
     See the file COPYING.
 */
 
-#include "ftpfs.h"
-#include "ftpfs-ls.h"
+#define _XOPEN_SOURCE 600  /* glibc2 needs this */
+#include <time.h>                                                        
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#define _XOPEN_SOURCE /* glibc2 needs this */
-#include <time.h>                                                        
+
+#include "ftpfs.h"
+#include "ftpfs-ls.h"
 
 struct ftpfs ftpfs;
 

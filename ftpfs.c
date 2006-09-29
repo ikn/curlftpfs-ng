@@ -323,7 +323,8 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
     err = -EIO;
   } else {
     buf_add_mem(&buf, "\0", 1);
-    parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, NULL, NULL, NULL, 0, h, filler); 
+    parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1,
+              NULL, NULL, NULL, 0, h, filler); 
   }
 
   free(dir_path);
@@ -373,7 +374,8 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
 
   char* name = strrchr(path, '/');
   ++name;
-  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, name, sbuf, NULL, 0, NULL, NULL); 
+  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1,
+                  name, sbuf, NULL, 0, NULL, NULL); 
 
   free(dir_path);
   buf_free(&buf);
@@ -911,7 +913,8 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
 
   char* name = strrchr(path, '/');
   ++name;
-  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1, name, NULL, linkbuf, size, NULL, NULL); 
+  err = parse_dir(buf.p, dir_path + strlen(ftpfs.host) - 1,
+                  name, NULL, linkbuf, size, NULL, NULL); 
 
   free(dir_path);
   buf_free(&buf);

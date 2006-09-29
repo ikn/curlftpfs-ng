@@ -40,15 +40,34 @@ static int parse_dir_unix(const char *line,
   memset(&tm, 0, sizeof(tm));
   memset(&tt, 0, sizeof(tt));
 
-  res = sscanf(line, "%11s%*[ \t]%lu%*[ \t]%32s%*[ \t]%32s%*[ \t]%lu%*[ \t]%3s%*[ \t]%2s%*[ \t]%5s%*[ \t]%1023c",
+#define SPACES "%*[ \t]"
+  res = sscanf(line,
+               "%11s" SPACES
+               "%lu"  SPACES
+               "%32s" SPACES
+               "%32s" SPACES
+               "%lu"  SPACES
+               "%3s"  SPACES
+               "%2s"  SPACES
+               "%5s"  SPACES
+               "%1023c",
                mode, &nlink, user, group, &size, month, day, year, file);
   if (res < 9) {
-    res = sscanf(line, "%11s%*[ \t]%32s%*[ \t]%32s%*[ \t]%lu%*[ \t]%3s%*[ \t]%2s%*[ \t]%5s%*[ \t]%1023c",
+    res = sscanf(line,
+                 "%11s" SPACES
+                 "%32s" SPACES
+                 "%32s" SPACES
+                 "%lu"  SPACES
+                 "%3s"  SPACES
+                 "%2s"  SPACES
+                 "%5s"  SPACES
+                 "%1023c",
                  mode, user, group, &size, month, day, year, file);
     if (res < 8) {
       return 0;
     }
   }
+#undef SPACES
 
   char *link_marker = strstr(file, " -> ");
   if (link_marker) {

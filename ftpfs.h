@@ -67,6 +67,11 @@ struct ftpfs {
 extern struct ftpfs ftpfs;
 
 #define DEBUG(args...) \
-        do { if (ftpfs.debug) fprintf(stderr, args); } while(0)
+        do { if (ftpfs.debug) {\
+               fprintf(stderr, "%ld ", time(NULL));\
+               fprintf(stderr, __FILE__ ":%d ", __LINE__);\
+               fprintf(stderr, args);\
+             }\
+           } while(0)
 
 #endif   /* __CURLFTPFS_FTPFS_H__ */

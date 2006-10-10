@@ -42,25 +42,25 @@ static int parse_dir_unix(const char *line,
 
 #define SPACES "%*[ \t]"
   res = sscanf(line,
-               "%11s" SPACES
+               "%11s"
                "%lu"  SPACES
                "%32s" SPACES
                "%32s" SPACES
                "%lu"  SPACES
                "%3s"  SPACES
                "%2s"  SPACES
-               "%5s"  SPACES
+               "%5s"  "%*c"
                "%1023c",
                mode, &nlink, user, group, &size, month, day, year, file);
   if (res < 9) {
     res = sscanf(line,
-                 "%11s" SPACES
+                 "%11s"
                  "%32s" SPACES
                  "%32s" SPACES
                  "%lu"  SPACES
                  "%3s"  SPACES
                  "%2s"  SPACES
-                 "%5s"  SPACES
+                 "%5s"  "%*c"
                  "%1023c",
                  mode, user, group, &size, month, day, year, file);
     if (res < 8) {

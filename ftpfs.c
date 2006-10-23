@@ -1214,6 +1214,45 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_IPRESOLVE, ftpfs.ip_version);
 }
 
+static void checkpasswd(const char *kind, /* for what purpose */
+                        char **userpwd) /* pointer to allocated string */
+{
+  char *ptr;
+  if(!*userpwd)
+    return;
+
+  ptr = strchr(*userpwd, ':');
+  if(!ptr) {
+    /* no password present, prompt for one */
+    char *passwd;
+    char prompt[256];
+    size_t passwdlen;
+    size_t userlen = strlen(*userpwd);
+    char *passptr;
+
+    /* build a nice-looking prompt */
+    snprintf(prompt, sizeof(prompt),
+        "Enter %s password for user '%s':",
+        kind, *userpwd);
+
+    /* get password */
+    passwd = getpass(prompt);
+    passwdlen = strlen(passwd);
+
+    /* extend the allocated memory area to fit the password too */
+    passptr = realloc(*userpwd,
+        passwdlen + 1 + /* an extra for the colon */
+        userlen + 1);   /* an extra for the zero */
+
+    if(passptr) {
+      /* append the password separated with a colon */
+      passptr[userlen]=':';
+      memcpy(&passptr[userlen+1], passwd, passwdlen+1);
+      *userpwd = passptr;
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   int res;
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
@@ -1248,6 +1287,9 @@ int main(int argc, char** argv) {
   res = cache_parse_options(&args);
   if (res == -1)
     exit(1);
+
+  checkpasswd("host", &ftpfs.user);
+  checkpasswd("proxy", &ftpfs.proxy_user);
 
   if (ftpfs.transform_symlinks && !ftpfs.mountpoint) {
     fprintf(stderr, "cannot transform symlinks: no mountpoint given\n");

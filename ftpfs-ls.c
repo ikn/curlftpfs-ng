@@ -27,7 +27,7 @@ static int parse_dir_unix(const char *line,
   long nlink = 1;
   char user[33];
   char group[33];
-  long size;
+  unsigned long long size;
   char month[4];
   char day[3];
   char year[6];
@@ -46,7 +46,7 @@ static int parse_dir_unix(const char *line,
                "%lu"  SPACES
                "%32s" SPACES
                "%32s" SPACES
-               "%lu"  SPACES
+               "%llu" SPACES
                "%3s"  SPACES
                "%2s"  SPACES
                "%5s"  "%*c"
@@ -57,7 +57,7 @@ static int parse_dir_unix(const char *line,
                  "%11s"
                  "%32s" SPACES
                  "%32s" SPACES
-                 "%lu"  SPACES
+                 "%llu" SPACES
                  "%3s"  SPACES
                  "%2s"  SPACES
                  "%5s"  "%*c"
@@ -156,7 +156,7 @@ static int parse_dir_win(const char *line,
   if (!strcmp(size, "<DIR>")) {
     sbuf->st_mode |= S_IFDIR;
   } else {
-    int nsize = strtol(size, NULL, 0);
+    unsigned long long nsize = strtoull(size, NULL, 0);
     sbuf->st_mode |= S_IFREG;
     sbuf->st_size = nsize;
     if (ftpfs.blksize) {

@@ -6,7 +6,12 @@
     See the file COPYING.
 */
 
+#ifndef __FreeBSD__
 #define _XOPEN_SOURCE 600
+#else
+#define _XOPEN_SOURCE
+#endif
+
 #include <time.h>
 #include <string.h>
 #include <sys/types.h>

@@ -21,6 +21,8 @@
 #include <fuse_opt.h>
 #include <glib.h>
 
+#include "charset_utils.h"
+#include "path_utils.h"
 #include "ftpfs-ls.h"
 #include "cache.h"
 #include "ftpfs.h"
@@ -43,7 +45,6 @@ struct buffer {
 };
 
 static void usage(const char* progname);
-static char* get_dir_path(const char* path, int strip);
 
 static inline void buf_init(struct buffer* buf, size_t size)
 {
@@ -261,6 +262,8 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
   FTPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
   FTPFS_OPT("utf8",               tryutf8, 1),
+  FTPFS_OPT("codepage=%s",        codepage, 0),
+  FTPFS_OPT("iocharset=%s",       iocharset, 0),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -305,7 +308,7 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
                         fuse_cache_dirfil_t filler) {
   int err = 0;
   CURLcode curl_res;
-  char* dir_path = get_dir_path(path, 0);
+  char* dir_path = get_fulldir_path(path);
 
   DEBUG("ftpfs_getdir: %s\n", dir_path);
   struct buffer buf;
@@ -332,29 +335,10 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   return err;
 }
 
-static char* get_dir_path(const char* path, int strip) {
-  char *ret;
-  const char *lastdir;
-
-  ++path;
-  
-  if (strip) {
-    lastdir = strrchr(path, '/');
-    if (lastdir == NULL) lastdir = path;
-  } else {
-    lastdir = path + strlen(path);
-  }
-
-  ret = g_strdup_printf("%s%.*s%s", ftpfs.host, lastdir - path, path,
-		                    lastdir - path ? "/" : "");
-
-  return ret;
-}
-
 static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   int err;
   CURLcode curl_res;
-  char* dir_path = get_dir_path(path, 1);
+  char* dir_path = get_dir_path(path);
 
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
@@ -518,7 +502,7 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
 static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   DEBUG("%d\n", fi->flags & O_ACCMODE);
   int err = 0;
-  char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+  char *full_path = get_full_path(path);
 
   struct ftpfs_file* fh =
     (struct ftpfs_file*) malloc(sizeof(struct ftpfs_file));
@@ -567,7 +551,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
 static int ftpfs_read(const char* path, char* rbuf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
   int ret;
-  char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+  char *full_path = get_full_path(path);
   size_t size_read = ftpfs_read_chunk(full_path, rbuf, size, offset, fi, 1);
   free(full_path);
   if (size_read == CURLFTPFS_BAD_READ) {
@@ -586,7 +570,7 @@ static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev) {
   if ((mode & S_IFMT) != S_IFREG)
     return -EPERM;
 
-  char *full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+  char *full_path = get_full_path(path);
 
   pthread_mutex_lock(&ftpfs.lock);
   curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
@@ -614,9 +598,9 @@ static int ftpfs_chmod(const char* path, mode_t mode) {
   int mode_c = mode - (mode / 0x1000 * 0x1000);
   
   struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path, 1);
-  char* cmd = g_strdup_printf("SITE CHMOD %.3o %s",
-                              mode_c, strrchr(path, '/') + 1);
+  char* full_path = get_dir_path(path);
+  char* filename = get_file_name(path);
+  char* cmd = g_strdup_printf("SITE CHMOD %.3o %s", mode_c, filename);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -640,6 +624,7 @@ static int ftpfs_chmod(const char* path, mode_t mode) {
   buf_free(&buf);
   curl_slist_free_all(header);
   free(full_path);
+  free(filename);
   free(cmd); 
   return err;
 }
@@ -648,9 +633,10 @@ static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
   int err = 0;
   
   struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path, 1);
-  char* cmd = g_strdup_printf("SITE CHUID %i %s", uid, strrchr(path, '/') + 1);
-  char* cmd2 = g_strdup_printf("SITE CHGID %i %s", gid, strrchr(path, '/') + 1);
+  char* full_path = get_dir_path(path);
+  char* filename = get_file_name(path);
+  char* cmd = g_strdup_printf("SITE CHUID %i %s", uid, filename);
+  char* cmd2 = g_strdup_printf("SITE CHGID %i %s", gid, filename);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -675,6 +661,7 @@ static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
   buf_free(&buf);
   curl_slist_free_all(header);
   free(full_path);
+  free(filename);
   free(cmd); 
   free(cmd2); 
   return err;
@@ -695,8 +682,9 @@ static int ftpfs_utime(const char* path, struct utimbuf* time) {
 static int ftpfs_rmdir(const char* path) {
   int err = 0;
   struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path, 1);
-  char* cmd = g_strdup_printf("RMD %s", strrchr(path, '/') + 1);
+  char* full_path = get_dir_path(path);
+  char* filename = get_file_name(path);
+  char* cmd = g_strdup_printf("RMD %s", filename);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -723,6 +711,7 @@ static int ftpfs_rmdir(const char* path) {
   buf_free(&buf);
   curl_slist_free_all(header);
   free(full_path);
+  free(filename);
   free(cmd);
   return err;
 }
@@ -731,8 +720,9 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   (void) mode;
   int err = 0;
   struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path, 1);
-  char* cmd = g_strdup_printf("MKD %s", strrchr(path, '/') + 1);
+  char* full_path = get_dir_path(path);
+  char* filename = get_file_name(path);
+  char* cmd = g_strdup_printf("MKD %s", filename);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -756,6 +746,7 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   buf_free(&buf);
   curl_slist_free_all(header);
   free(full_path);
+  free(filename);
   free(cmd);
   return err;
 }
@@ -763,8 +754,9 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
 static int ftpfs_unlink(const char* path) {
   int err = 0;
   struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path, 1);
-  char* cmd = g_strdup_printf("DELE %s", strrchr(path, '/') + 1);
+  char* full_path = get_dir_path(path);
+  char* filename = get_file_name(path);
+  char* cmd = g_strdup_printf("DELE %s", filename);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -788,6 +780,7 @@ static int ftpfs_unlink(const char* path) {
   buf_free(&buf);
   curl_slist_free_all(header);
   free(full_path);
+  free(filename);
   free(cmd);
   return err;
 }
@@ -815,7 +808,7 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
 
   int err = 0;
   DEBUG("ftpfs_flush: %d\n", fh->buf.len);
-  char* full_path = g_strdup_printf("%s%s", ftpfs.host, path + 1);
+  char* full_path = get_full_path(path);
 
   pthread_mutex_lock(&ftpfs.lock);
   curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
@@ -858,12 +851,19 @@ static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
 
 
 static int ftpfs_rename(const char* from, const char* to) {
+  DEBUG("Reanming from %s to %s\n", from, to);
   int err = 0;
   char* rnfr = g_strdup_printf("RNFR %s", from + 1);
   char* rnto = g_strdup_printf("RNTO %s", to + 1);
   struct buffer buf;
   buf_init(&buf, 0);
   struct curl_slist* header = NULL;
+
+  if (ftpfs.codepage) {
+    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &rnfr);
+    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &rnto);
+  }
+
   header = curl_slist_append(header, rnfr);
   header = curl_slist_append(header, rnto);
 
@@ -893,7 +893,7 @@ static int ftpfs_rename(const char* from, const char* to) {
 static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   int err;
   CURLcode curl_res;
-  char* dir_path = get_dir_path(path, 1);
+  char* dir_path = get_dir_path(path);
 
   DEBUG("dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
@@ -1074,6 +1074,8 @@ static void usage(const char* progname) {
 "    ipv4                resolve name to IPv4 address\n"
 "    ipv6                resolve name to IPv6 address\n"
 "    utf8                try to transfer file list with utf-8 encoding\n"
+"    codepage=STR        set the codepage the server uses\n"
+"    iocharset=STR       set the charset used by the client\n"
 "\n", progname);
 }
 
@@ -1276,6 +1278,14 @@ int main(int argc, char** argv) {
     fprintf(stderr, "missing host\n");
     fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
     exit(1);
+  }
+
+  if (!ftpfs.iocharset) {
+    ftpfs.iocharset = "UTF8";
+  }
+
+  if (ftpfs.codepage) {
+    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &ftpfs.host);
   }
 
   easy = curl_easy_init();

@@ -72,6 +72,9 @@ set when you compile OpenSSL.
 Read up on SSL cipher list details
 on this URL: \fIhttp://www.openssl.org/docs/apps/ciphers.html\fP
 .TP
+.B codepage=<name>
+Sets the encoding the ftp server uses to encode file names.
+.TP
 .B connect_timeout=<seconds>
 Maximum time in seconds that you allow the connection to the server to take.
 This only limits the connection phase, once curlftpfs has connected this option
@@ -132,6 +135,10 @@ EPRT is really PORT++.
 Pass a string as parameter. This set the interface name  to  use as  outgoing
 network  interface.  The  name can be an interface name, an IP address or a
 host name.
+.TP
+.B iocharset=<name>
+Sets the charset used by the client side for codepage to charset translation.
+Default: UTF8.
 .TP
 .B ipv4
 If  libcurl  is  capable  of resolving an address to multiple IP versions

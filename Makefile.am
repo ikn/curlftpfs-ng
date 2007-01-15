@@ -5,7 +5,8 @@ DIST_SUBDIRS = $(SUBDIRS) tests
 
 bin_PROGRAMS = curlftpfs
 
-curlftpfs_SOURCES = ftpfs.c ftpfs.h cache.c cache.h ftpfs-ls.c ftpfs-ls.h
+curlftpfs_SOURCES = ftpfs.c ftpfs.h cache.c cache.h ftpfs-ls.c ftpfs-ls.h \
+                    charset_utils.c charset_utils.h path_utils.c path_utils.h
 curlftpfs_CPPFLAGS = -DFUSE_USE_VERSION=25
 
 if FUSE_OPT_COMPAT

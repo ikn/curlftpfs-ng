@@ -22,6 +22,7 @@
 #include <glib.h>
 
 #include "ftpfs.h"
+#include "charset_utils.h"
 #include "ftpfs-ls.h"
 
 static int parse_dir_unix(const char *line,
@@ -221,6 +222,10 @@ int parse_dir(const char* list, const char* dir,
     strncpy(line, start, end - start);
     line[end - start] = '\0';
     start = *end == '\r' ? end + 2 : end + 1;
+
+    if (ftpfs.codepage) {
+      convert_charsets(ftpfs.codepage, ftpfs.iocharset, &line);
+    }
 
     file[0] = link[0] = '\0';
     int res = parse_dir_unix(line, &stat_buf, file, link) ||

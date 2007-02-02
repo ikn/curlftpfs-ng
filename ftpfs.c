@@ -214,7 +214,7 @@ struct ftpfs_file {
   int copied;        // amount of data already copied
   off_t last_offset; // offset of last copy
   int can_shrink;    // if we can shrink the file buffer
-  int create;        // if file was created by create()
+  int needs_flush;   // if file needs to be flushed to server, even if not dirty
   mode_t mode;       // mode of file created by create()
 };
 
@@ -530,7 +530,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   fh->last_offset = 0;
   fh->can_shrink = 0;
   fh->mode = 0;
-  fh->create = 0;
+  fh->needs_flush = 0;
   fi->fh = (unsigned long) fh;
 
   if ((fi->flags & O_ACCMODE) == O_RDONLY) {
@@ -600,7 +600,7 @@ static int ftpfs_create(const char* path,
   fh->last_offset = 0;
   fh->can_shrink = 0;
   fh->mode = mode;
-  fh->create = 1;
+  fh->needs_flush = 1;
   fi->fh = (unsigned long) fh;
 
   return err;
@@ -865,6 +865,7 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
 
   fh->dirty = 0;
+  fh->needs_flush = 0;
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (curl_res != 0) {
@@ -887,7 +888,7 @@ static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
   // If file was created by create(), it is not created in the server yet. If
   // it is a zero-byte file, the file will not be dirty so we have to force
   // the creation on the server.
-  if (fh->create) fh->dirty = 1;
+  if (fh->needs_flush) fh->dirty = 1;
 
   ftpfs_flush(path, fi);
   pthread_mutex_lock(&ftpfs.lock);

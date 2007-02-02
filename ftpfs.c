@@ -209,11 +209,13 @@ static inline int buf_get_string(struct buffer *buf, char **str)
 }
 
 struct ftpfs_file {
-  struct buffer buf;
-  int dirty;
-  int copied;
-  off_t last_offset;
-  int can_shrink;
+  struct buffer buf; // buffer with file contents
+  int dirty;         // whether the contents have changed
+  int copied;        // amount of data already copied
+  off_t last_offset; // offset of last copy
+  int can_shrink;    // if we can shrink the file buffer
+  int create;        // if file was created by create()
+  mode_t mode;       // mode of file created by create()
 };
 
 enum {
@@ -334,6 +336,22 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   buf_free(&buf);
   return err;
 }
+
+#if FUSE_VERSION >= 25
+static int ftpfs_fgetattr(const char* path,
+                          struct stat* sbuf,
+                          struct fuse_file_info* fi) {
+  (void) path;
+
+  struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
+  memset(sbuf, 0, sizeof(*sbuf));
+  sbuf->st_mode |= fh->mode;
+  sbuf->st_nlink = 1;
+  sbuf->st_blksize = ftpfs.blksize;
+  
+  return 0;
+}
+#endif  // FUSE_VERSION >= 25
 
 static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   int err;
@@ -511,6 +529,8 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
   fh->copied = 0;
   fh->last_offset = 0;
   fh->can_shrink = 0;
+  fh->mode = 0;
+  fh->create = 0;
   fi->fh = (unsigned long) fh;
 
   if ((fi->flags & O_ACCMODE) == O_RDONLY) {
@@ -561,6 +581,31 @@ static int ftpfs_read(const char* path, char* rbuf, size_t size, off_t offset,
   }
   return ret;
 }
+
+#if FUSE_VERSION >= 25
+static int ftpfs_create(const char* path,
+                        mode_t mode,
+                        struct fuse_file_info* fi) {
+  (void) path;
+
+  DEBUG("%d\n", fi->flags & O_ACCMODE);
+  DEBUG("%o\n", mode);
+  int err = 0;
+
+  struct ftpfs_file* fh =
+    (struct ftpfs_file*) malloc(sizeof(struct ftpfs_file));
+  buf_init(&fh->buf, 0);
+  fh->dirty = 0;
+  fh->copied = 0;
+  fh->last_offset = 0;
+  fh->can_shrink = 0;
+  fh->mode = mode;
+  fh->create = 1;
+  fi->fh = (unsigned long) fh;
+
+  return err;
+}
+#endif  // FUSE_VERSION >= 25
 
 static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev) {
   (void) rdev;
@@ -838,6 +883,12 @@ static int ftpfs_fsync(const char *path, int isdatasync,
 
 static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
+
+  // If file was created by create(), it is not created in the server yet. If
+  // it is a zero-byte file, the file will not be dirty so we have to force
+  // the creation on the server.
+  if (fh->create) fh->dirty = 1;
+
   ftpfs_flush(path, fi);
   pthread_mutex_lock(&ftpfs.lock);
   if (ftpfs.current_fh == fh) {
@@ -978,9 +1029,9 @@ static struct fuse_cache_operations ftpfs_oper = {
     .write      = ftpfs_write,
     .statfs     = ftpfs_statfs,
 #if FUSE_VERSION >= 25
-//    .create     = ftpfs_create,
+    .create     = ftpfs_create,
 //    .ftruncate  = ftpfs_ftruncate,
-//    .fgetattr   = ftpfs_fgetattr,
+    .fgetattr   = ftpfs_fgetattr,
 #endif
   },
   .cache_getdir = ftpfs_getdir,

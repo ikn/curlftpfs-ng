@@ -279,11 +279,11 @@ static struct fuse_opt ftpfs_opts[] = {
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *data) {
   struct ftpfs_file* fh = (struct ftpfs_file*)data;
   if (fh == NULL) return 0;
-  unsigned to_copy = size * nmemb;
+  size_t to_copy = size * nmemb;
   if (to_copy > fh->buf.len - fh->copied) {
     to_copy = fh->buf.len - fh->copied;
   }
-  DEBUG("write_data: %d\n", to_copy);
+  DEBUG("write_data: %zu\n", to_copy);
   memcpy(ptr, fh->buf.p + fh->copied, to_copy);
   fh->copied += to_copy;
   return to_copy;
@@ -293,7 +293,7 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
   struct buffer* buf = (struct buffer*)data;
   if (buf == NULL) return size * nmemb;
   buf_add_mem(buf, ptr, size * nmemb);
-  DEBUG("read_data: %d\n", size * nmemb);
+  DEBUG("read_data: %zu\n", size * nmemb);
   return size * nmemb;
 }
 
@@ -399,12 +399,12 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
   int err = 0;
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
 
-  DEBUG("ftpfs_read_chunk: %s %p %d %lld %p %p\n",
+  DEBUG("ftpfs_read_chunk: %s %p %zu %lld %p %p\n",
         full_path, rbuf, size, offset, fi, fh);
 
   pthread_mutex_lock(&ftpfs.lock);
 
-  DEBUG("buffer size: %d %lld\n", fh->buf.len, fh->buf.begin_offset);
+  DEBUG("buffer size: %zu %lld\n", fh->buf.len, fh->buf.begin_offset);
 
   if ((fh->buf.len < size + offset - fh->buf.begin_offset) ||
       offset < fh->buf.begin_offset ||
@@ -502,7 +502,7 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
 
   // Check if the buffer is growing and we can delete a part of it
   if (fh->can_shrink && fh->buf.len > MAX_BUFFER_LEN) {
-    DEBUG("Shrinking buffer from %d to %d bytes\n",
+    DEBUG("Shrinking buffer from %zu to %zu bytes\n",
           fh->buf.len, to_copy - size);
     memmove(fh->buf.p,
             fh->buf.p + offset - fh->buf.begin_offset + size,
@@ -834,7 +834,7 @@ static int ftpfs_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi) {
   (void) path;
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
-  DEBUG("ftpfs_write: %d %lld\n", size, offset);
+  DEBUG("ftpfs_write: %zu %lld\n", size, offset);
   if (offset + size > fh->buf.size) {
     buf_resize(&fh->buf, offset + size);
   }
@@ -852,7 +852,7 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   if (!fh->dirty) return 0;
 
   int err = 0;
-  DEBUG("ftpfs_flush: %d\n", fh->buf.len);
+  DEBUG("ftpfs_flush: %zu\n", fh->buf.len);
   char* full_path = get_full_path(path);
 
   pthread_mutex_lock(&ftpfs.lock);

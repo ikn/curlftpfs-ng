@@ -6,10 +6,13 @@
     See the file COPYING.
 */
 
+#include "config.h"
+
 #include <string.h>
 #include <limits.h>
 #include <iconv.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include "ftpfs.h"
 
@@ -21,7 +24,7 @@ int convert_charsets(const char* from, const char* to, char** str) {
     return 0;
 
   if (to && from && (cd = iconv_open(to, from)) != (iconv_t)-1) {
-    char* ib;
+    ICONV_CONST char* ib;
     char* buf;
     char* ob;
     size_t ibl, obl;
@@ -33,7 +36,7 @@ int convert_charsets(const char* from, const char* to, char** str) {
     ob = buf;
 
     do {
-      if (iconv (cd, &ib, &ibl, &ob, &obl) == (size_t)-1) {
+      if (iconv(cd, &ib, &ibl, &ob, &obl) == (size_t)-1) {
         DEBUG("iconv return error %d\n", errno);
         if (obl) {
           *ob++ = *ib++;

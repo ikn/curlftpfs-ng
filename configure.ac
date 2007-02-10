@@ -54,6 +54,9 @@ AC_FUNC_STRFTIME
 AC_FUNC_UTIME_NULL
 AC_CHECK_FUNCS([ftruncate getpass memmove memset mkdir realpath rmdir select strchr strdup strrchr strstr strtoull utime])
 
+# Check for iconv
+AM_ICONV
+
 if test "$have_fuse_opt_parse" = no; then
 	CFLAGS="$CFLAGS -Icompat -I../compat"
 fi

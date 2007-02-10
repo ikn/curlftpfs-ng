@@ -75,7 +75,7 @@ char* get_dir_path(const char* path) {
   if (lastdir == NULL) lastdir = path;
 
   if (ftpfs.codepage && (lastdir - path > 0)) {
-    converted_path = strndup(path, lastdir - path);
+    converted_path = g_strndup(path, lastdir - path);
     convert_charsets(ftpfs.iocharset, ftpfs.codepage, &converted_path);
     path = converted_path;
     lastdir = path + strlen(path);

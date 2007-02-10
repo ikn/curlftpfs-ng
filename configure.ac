@@ -12,6 +12,7 @@ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
 PKG_CHECK_MODULES(GLIB, [glib-2.0])
 PKG_CHECK_MODULES(FUSE, [fuse >= 2.2])
+FUSE_CFLAGS="$FUSE_CFLAGS -DFUSE_USE_VERSION=26"
 
 LIBCURL_CHECK_CONFIG([yes], [7.15.2], [], [AC_MSG_ERROR(["libcurl not found"])])
 if test "$libcurl_protocol_FTP" != yes; then

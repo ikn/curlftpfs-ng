@@ -230,7 +230,7 @@ static int cache_getattr(const char *path, struct stat *stbuf)
         err = cache.next_oper->oper.getattr(path, stbuf);
         if (!err)
             cache_add_attr(path, stbuf);
-        else if (err = -ENOENT)
+        else if (err == -ENOENT)
             cache_add_attr(path, NULL);
     }
     return err;
@@ -451,7 +451,7 @@ static int cache_fgetattr(const char *path, struct stat *stbuf,
         err = cache.next_oper->oper.fgetattr(path, stbuf, fi);
         if (!err)
             cache_add_attr(path, stbuf);
-        else if (err = -ENOENT)
+        else if (err == -ENOENT)
             cache_add_attr(path, NULL);
     }
     return err;

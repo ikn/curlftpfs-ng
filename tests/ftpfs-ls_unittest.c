@@ -123,10 +123,11 @@ int main(int argc, char **argv) {
   strftime(date, 20, "00:00:00 %d/%m/%Y", &test_tm);
   check(sbuf, 0, 0, S_IFREG, 1, 0, 0, 0, 1803128, 4096, 3528, date);
 
-  list = "-rw-r--r--  1 robson users   1803128 Jun 20 02:13  test\r\n";
+  // Test a file with space
+  list = "-rw-r--r--  1 robson users   1803128 Jan 01  2001  test\r\n";
   err = parse_dir(list, "/", " test", &sbuf, NULL, 0, NULL, NULL);
   assert(err == 0);
-  check(sbuf, 0, 0, S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, 1, 0, 0, 0, 1803128, 4096, 3528, "02:13:00 20/06/2006");
+  check(sbuf, 0, 0, S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, 1, 0, 0, 0, 1803128, 4096, 3528, "00:00:00 01/01/2001");
 
   list = "drwxrwsr-x+ 14 cristol molvis 1024 Feb 17 2000 v2\r\n";
   err = parse_dir(list, "/", "v2", &sbuf, NULL, 0, NULL, NULL);

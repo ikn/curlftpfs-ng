@@ -227,7 +227,7 @@ enum {
 #define FTPFS_OPT(t, p, v) { t, offsetof(struct ftpfs, p), v }
 
 static struct fuse_opt ftpfs_opts[] = {
-  FTPFS_OPT("ftpfs_debug",        debug, 1),
+  FTPFS_OPT("ftpfs_debug=%u",     debug, 0),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
   FTPFS_OPT("disable_epsv",       disable_epsv, 1),
   FTPFS_OPT("skip_pasv_ip",       skip_pasv_ip, 1),
@@ -283,7 +283,8 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *data) {
   if (to_copy > fh->buf.len - fh->copied) {
     to_copy = fh->buf.len - fh->copied;
   }
-  DEBUG("write_data: %zu\n", to_copy);
+  DEBUG(2, "write_data: %zu\n", to_copy);
+  DEBUG(3, "%*s\n", (int)to_copy, (char*)ptr);
   memcpy(ptr, fh->buf.p + fh->copied, to_copy);
   fh->copied += to_copy;
   return to_copy;
@@ -293,7 +294,8 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
   struct buffer* buf = (struct buffer*)data;
   if (buf == NULL) return size * nmemb;
   buf_add_mem(buf, ptr, size * nmemb);
-  DEBUG("read_data: %zu\n", size * nmemb);
+  DEBUG(2, "read_data: %zu\n", size * nmemb);
+  DEBUG(3, "%*s\n", (int)(size * nmemb), (char*)ptr);
   return size * nmemb;
 }
 
@@ -312,7 +314,7 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   CURLcode curl_res;
   char* dir_path = get_fulldir_path(path);
 
-  DEBUG("ftpfs_getdir: %s\n", dir_path);
+  DEBUG(1, "ftpfs_getdir: %s\n", dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -324,7 +326,7 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (curl_res != 0) {
-    DEBUG("%s\n", error_buf);
+    DEBUG(1, "%s\n", error_buf);
     err = -EIO;
   } else {
     buf_add_mem(&buf, "\0", 1);
@@ -358,7 +360,7 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   CURLcode curl_res;
   char* dir_path = get_dir_path(path);
 
-  DEBUG("dir_path: %s %s\n", path, dir_path);
+  DEBUG(2, "dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -370,7 +372,7 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (curl_res != 0) {
-    DEBUG("%s\n", error_buf);
+    DEBUG(1, "%s\n", error_buf);
   }
   buf_add_mem(&buf, "\0", 1);
 
@@ -399,12 +401,12 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
   int err = 0;
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
 
-  DEBUG("ftpfs_read_chunk: %s %p %zu %lld %p %p\n",
+  DEBUG(2, "ftpfs_read_chunk: %s %p %zu %lld %p %p\n",
         full_path, rbuf, size, offset, fi, fh);
 
   pthread_mutex_lock(&ftpfs.lock);
 
-  DEBUG("buffer size: %zu %lld\n", fh->buf.len, fh->buf.begin_offset);
+  DEBUG(2, "buffer size: %zu %lld\n", fh->buf.len, fh->buf.begin_offset);
 
   if ((fh->buf.len < size + offset - fh->buf.begin_offset) ||
       offset < fh->buf.begin_offset ||
@@ -414,9 +416,9 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
         offset < fh->buf.begin_offset ||
         offset > fh->buf.begin_offset + fh->buf.len ||
         !check_running()) {
-      DEBUG("We need to restart the connection\n");
-      DEBUG("%p %p\n", ftpfs.current_fh, fh);
-      DEBUG("%lld %lld\n", fh->buf.begin_offset, offset);
+      DEBUG(1, "We need to restart the connection\n");
+      DEBUG(2, "%p %p\n", ftpfs.current_fh, fh);
+      DEBUG(2, "%lld %lld\n", fh->buf.begin_offset, offset);
 
       buf_clear(&fh->buf);
       fh->buf.begin_offset = offset;
@@ -502,7 +504,7 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
 
   // Check if the buffer is growing and we can delete a part of it
   if (fh->can_shrink && fh->buf.len > MAX_BUFFER_LEN) {
-    DEBUG("Shrinking buffer from %zu to %zu bytes\n",
+    DEBUG(2, "Shrinking buffer from %zu to %zu bytes\n",
           fh->buf.len, to_copy - size);
     memmove(fh->buf.p,
             fh->buf.p + offset - fh->buf.begin_offset + size,
@@ -518,7 +520,7 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
 }
 
 static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
-  DEBUG("%d\n", fi->flags & O_ACCMODE);
+  DEBUG(2, "%d\n", fi->flags & O_ACCMODE);
   int err = 0;
   char *full_path = get_full_path(path);
 
@@ -535,7 +537,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
 
   if ((fi->flags & O_ACCMODE) == O_RDONLY) {
     // If it's read-only, we can load the file a bit at a time, as necessary.
-    DEBUG("opening %s O_RDONLY\n", path);
+    DEBUG(1, "opening %s O_RDONLY\n", path);
     fh->can_shrink = 1;
     size_t size = ftpfs_read_chunk(full_path, NULL, 1, 0, fi, 0);
 
@@ -549,7 +551,7 @@ static int ftpfs_open(const char* path, struct fuse_file_info* fi) {
     // If we want to write to the file, we have to load it all at once,
     // modify it in memory and then upload it as a whole as most FTP servers
     // don't support resume for uploads.
-    DEBUG("opening %s O_WRONLY or O_RDWR\n", path);
+    DEBUG(1, "opening %s O_WRONLY or O_RDWR\n", path);
     pthread_mutex_lock(&ftpfs.lock);
     curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
     curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
@@ -588,8 +590,8 @@ static int ftpfs_create(const char* path,
                         struct fuse_file_info* fi) {
   (void) path;
 
-  DEBUG("%d\n", fi->flags & O_ACCMODE);
-  DEBUG("%o\n", mode);
+  DEBUG(2, "%d\n", fi->flags & O_ACCMODE);
+  DEBUG(2, "%o\n", mode);
   int err = 0;
 
   struct ftpfs_file* fh =
@@ -713,7 +715,7 @@ static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
 }
 
 static int ftpfs_truncate(const char* path, off_t offset) {
-  DEBUG("ftpfs_truncate: %lld\n", offset);
+  DEBUG(1, "ftpfs_truncate: %lld\n", offset);
   if (offset == 0) return ftpfs_mknod(path, S_IFREG, 0);
   return 0;
 }
@@ -733,8 +735,8 @@ static int ftpfs_rmdir(const char* path) {
   struct buffer buf;
   buf_init(&buf, 0);
 
-  DEBUG("%s\n", full_path);
-  DEBUG("%s\n", cmd);
+  DEBUG(2, "%s\n", full_path);
+  DEBUG(2, "%s\n", cmd);
 
   header = curl_slist_append(header, cmd);
 
@@ -834,7 +836,7 @@ static int ftpfs_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi) {
   (void) path;
   struct ftpfs_file* fh = (struct ftpfs_file*) (uintptr_t) fi->fh;
-  DEBUG("ftpfs_write: %zu %lld\n", size, offset);
+  DEBUG(1, "ftpfs_write: %zu %lld\n", size, offset);
   if (offset + size > fh->buf.size) {
     buf_resize(&fh->buf, offset + size);
   }
@@ -852,7 +854,7 @@ static int ftpfs_flush(const char *path, struct fuse_file_info *fi) {
   if (!fh->dirty) return 0;
 
   int err = 0;
-  DEBUG("ftpfs_flush: %zu\n", fh->buf.len);
+  DEBUG(1, "ftpfs_flush: %zu\n", fh->buf.len);
   char* full_path = get_full_path(path);
 
   pthread_mutex_lock(&ftpfs.lock);
@@ -903,7 +905,7 @@ static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
 
 
 static int ftpfs_rename(const char* from, const char* to) {
-  DEBUG("Reanming from %s to %s\n", from, to);
+  DEBUG(1, "ftpfs_rename from %s to %s\n", from, to);
   int err = 0;
   char* rnfr = g_strdup_printf("RNFR %s", from + 1);
   char* rnto = g_strdup_printf("RNTO %s", to + 1);
@@ -947,7 +949,7 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   CURLcode curl_res;
   char* dir_path = get_dir_path(path);
 
-  DEBUG("dir_path: %s %s\n", path, dir_path);
+  DEBUG(2, "dir_path: %s %s\n", path, dir_path);
   struct buffer buf;
   buf_init(&buf, 0);
 
@@ -959,7 +961,7 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (curl_res != 0) {
-    DEBUG("%s\n", error_buf);
+    DEBUG(1, "%s\n", error_buf);
   }
   buf_add_mem(&buf, "\0", 1);
 
@@ -1007,9 +1009,7 @@ static int ftpfs_statfs(const char *path, struct statfs *buf)
 
 static struct fuse_cache_operations ftpfs_oper = {
   .oper = {
-#ifdef SSHFS_USE_INIT
 //    .init       = ftpfs_init,
-#endif
     .getattr    = ftpfs_getattr,
     .readlink   = ftpfs_readlink,
     .mknod      = ftpfs_mknod,

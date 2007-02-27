@@ -37,7 +37,7 @@ int convert_charsets(const char* from, const char* to, char** str) {
 
     do {
       if (iconv(cd, &ib, &ibl, &ob, &obl) == (size_t)-1) {
-        DEBUG("iconv return error %d\n", errno);
+        DEBUG(2, "iconv return error %d\n", errno);
         if (obl) {
           *ob++ = *ib++;
           ibl--;
@@ -46,12 +46,12 @@ int convert_charsets(const char* from, const char* to, char** str) {
       }
     } while (ibl && obl);
     *ob = 0;
-    DEBUG("iconv return %s\n", buf);
+    DEBUG(2, "iconv return %s\n", buf);
     iconv_close (cd);
     free(*str);
     *str = buf;
   } else {
-    DEBUG("iconv_open return error %d\n", errno);
+    DEBUG(2, "iconv_open return error %d\n", errno);
   }
   
   return 0;

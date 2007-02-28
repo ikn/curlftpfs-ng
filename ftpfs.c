@@ -257,6 +257,9 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("proxy_basic",        proxybasic, 1),
   FTPFS_OPT("proxy_digest",       proxydigest, 1),
   FTPFS_OPT("proxy_ntlm",         proxyntlm, 1),
+  FTPFS_OPT("httpproxy",          proxytype, CURLPROXY_HTTP),
+  FTPFS_OPT("socks4",             proxytype, CURLPROXY_SOCKS4),
+  FTPFS_OPT("socks5",             proxytype, CURLPROXY_SOCKS5),
   FTPFS_OPT("user=%s",            user, 0),
   FTPFS_OPT("proxy_user=%s",      proxy_user, 0),
   FTPFS_OPT("tlsv1",              ssl_version, CURL_SSLVERSION_TLSv1),
@@ -1119,6 +1122,9 @@ static void usage(const char* progname) {
 "    proxy_basic         use Basic authentication on the proxy\n"
 "    proxy_digest        use Digest authentication on the proxy\n"
 "    proxy_ntlm          use NTLM authentication on the proxy\n"
+"    httpproxy           use a HTTP proxy (default)\n"
+"    socks4              use a SOCKS4 proxy\n"
+"    socks5              use a SOCKS5 proxy\n"
 "    user=STR            set server user and password\n"
 "    proxy_user=STR      set proxy user and password\n"
 "    tlsv1               use TLSv1 (SSL)\n"
@@ -1246,9 +1252,16 @@ static void set_common_curl_stuff(CURL* easy) {
   
   if (ftpfs.proxy) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXY, ftpfs.proxy);
-    /* Connection to FTP servers only make sense with a tunnel proxy */
   }
-  if (ftpfs.proxy || ftpfs.proxytunnel) {
+
+  /* The default proxy type is HTTP */
+  if (!ftpfs.proxytype) {
+    ftpfs.proxytype = CURLPROXY_HTTP;
+  }
+  curl_easy_setopt_or_die(easy, CURLOPT_PROXYTYPE, ftpfs.proxytype);
+  
+  /* Connection to FTP servers only make sense with a HTTP tunnel proxy */
+  if (ftpfs.proxytype == CURLPROXY_HTTP || ftpfs.proxytunnel) {
     curl_easy_setopt_or_die(easy, CURLOPT_HTTPPROXYTUNNEL, TRUE);
   }
 

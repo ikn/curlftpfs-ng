@@ -131,6 +131,9 @@ attempt to use the EPRT command instead of PORT by using \fIdisable_eprt\fP.
 EPRT is really PORT++.
 .RE
 .TP
+.B httpproxy
+Set the proxy type to HTTP. This is the default type.
+.TP
 .B interface=<name>
 Pass a string as parameter. This set the interface name  to  use as  outgoing
 network  interface.  The  name can be an interface name, an IP address or a
@@ -228,6 +231,12 @@ Tell curlftpfs to not use the IP address the server suggests in its response
 to curlftpfs's PASV command when curlftpfs connects the data connection.
 Instead curlftpfs will re-use the same IP address it already uses for the
 control connection.
+.TP
+.B socks4
+Set the proxy type to SOCKS4.
+.TP
+.B socks5
+Set the proxy type to SOCKS5.
 .TP
 .B ssl
 Make curlftpfs use SSL/TLS for both control and data connections.

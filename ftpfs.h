@@ -53,6 +53,7 @@ struct ftpfs {
   int proxybasic;
   int proxydigest;
   int proxyntlm;
+  int proxytype;
   char* user;
   char* proxy_user;
   int ssl_version;

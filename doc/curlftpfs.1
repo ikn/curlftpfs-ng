@@ -1,4 +1,4 @@
-.TH curlftpfs 1 "12 Apr 2006" "CurlFtpFS 0.6.1" "CurlFtpFS Manual"
+.TH curlftpfs 1 "25 May 2007" "CurlFtpFS 0.9.2" "CurlFtpFS Manual"
 .SH NAME
 curlftpfs \- mount a ftp host as a local directory
 .SH SYNOPSIS
@@ -90,8 +90,11 @@ traditional PORT command.
 .TP
 .B disable_epsv
 Tell curlftpfs to disable the use of the EPSV command when doing passive FTP
-transfers. Curlftpfs will normally always first attempt to use EPSV before
-PASV, but with this option, it will not try using EPSV.
+transfers. This is the default.
+.TP
+.B enable_epsv
+Tell curlftpfs to enable the use of the EPSV command when doing passive FTP
+transfers. Curlftpfs will first attempt to use EPSV before PASV.
 .TP
 .B engine=<name>
 Select  the  OpenSSL crypto engine to use for cipher operations.  Use: 

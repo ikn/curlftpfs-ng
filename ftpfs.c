@@ -228,6 +228,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ftpfs_debug=%u",     debug, 0),
   FTPFS_OPT("transform_symlinks", transform_symlinks, 1),
   FTPFS_OPT("disable_epsv",       disable_epsv, 1),
+  FTPFS_OPT("enable_epsv",        disable_epsv, 0),
   FTPFS_OPT("skip_pasv_ip",       skip_pasv_ip, 1),
   FTPFS_OPT("ftp_port=%s",        ftp_port, 0),
   FTPFS_OPT("disable_eprt",       disable_eprt, 1),
@@ -1042,7 +1043,8 @@ static void usage(const char* progname) {
 "FTP options:\n"
 "    ftpfs_debug         print some debugging information\n"
 "    transform_symlinks  prepend mountpoint to absolute symlink targets\n"
-"    disable_epsv        use PASV, without trying EPSV first\n"
+"    disable_epsv        use PASV, without trying EPSV first (default)\n"
+"    enable_epsv         try EPSV before reverting to PASV\n"
 "    skip_pasv_ip        skip the IP address for PASV\n"
 "    ftp_port=STR        use PORT with address instead of PASV\n"
 "    disable_eprt        use PORT, without trying EPRT first\n"
@@ -1279,10 +1281,11 @@ int main(int argc, char** argv) {
   
   memset(&ftpfs, 0, sizeof(ftpfs));
 
+  // Set some default values
   ftpfs.curl_version = curl_version_info(CURLVERSION_NOW);
   ftpfs.safe_nobody = ftpfs.curl_version->version_num > CURLFTPFS_BAD_NOBODY;
-  
   ftpfs.blksize = 4096;
+  ftpfs.disable_epsv = 1;
   
   if (fuse_opt_parse(&args, &ftpfs, ftpfs_opts, ftpfs_opt_proc) == -1)
     exit(1);

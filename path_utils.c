@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <glib.h>
 
 char* get_file_name(const char* path) {
   const char* filename = strrchr(path, '/');

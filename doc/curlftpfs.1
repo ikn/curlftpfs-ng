@@ -110,6 +110,19 @@ the
 .B \-d
 option.
 .TP
+.B ftp_method=<method>
+Control what method curlftpfs should use to reach a file on the
+server. The method argument should be one of the following alternatives:
+.RS
+.IP multicwd
+curlftpfs does a single CWD operation for each path part in the given URL. For
+deep hierarchies this means very many commands. This is how RFC1738 says it
+should be done. This is the default but the slowest behavior.
+.IP singlecwd
+curlftpfs does one CWD with the full target directory and then operates on the
+file \&"normally" (like in the multicwd case). 
+.RE
+.TP
 .B ftp_port=<address>
 Reverses the initiator/listener roles when connecting with ftp. This
 switch makes curlftpfs use the PORT command instead of PASV. In practice, PORT

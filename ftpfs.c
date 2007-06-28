@@ -232,6 +232,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("skip_pasv_ip",       skip_pasv_ip, 1),
   FTPFS_OPT("ftp_port=%s",        ftp_port, 0),
   FTPFS_OPT("disable_eprt",       disable_eprt, 1),
+  FTPFS_OPT("ftp_method=%s",      ftp_method, 0),
   FTPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   FTPFS_OPT("connect_timeout=%u", connect_timeout, 0),
   FTPFS_OPT("ssl",                use_ssl, CURLFTPSSL_ALL),
@@ -1057,6 +1058,7 @@ static void usage(const char* progname) {
 "    skip_pasv_ip        skip the IP address for PASV\n"
 "    ftp_port=STR        use PORT with address instead of PASV\n"
 "    disable_eprt        use PORT, without trying EPRT first\n"
+"    ftp_method          [multicwd/singlecwd] Control CWD usage\n"
 "    tcp_nodelay         use the TCP_NODELAY option\n"
 "    connect_timeout=N   maximum time allowed for connection in seconds\n"
 "    ssl                 enable SSL/TLS for both control and data connections\n"
@@ -1094,6 +1096,16 @@ static void usage(const char* progname) {
 "    codepage=STR        set the codepage the server uses\n"
 "    iocharset=STR       set the charset used by the client\n"
 "\n", progname);
+}
+
+static int ftpfilemethod(const char *str)
+{
+  if(!strcmp("singlecwd", str))
+    return CURLFTPMETHOD_SINGLECWD;
+  if(!strcmp("multicwd", str))
+    return CURLFTPMETHOD_MULTICWD;
+  DEBUG(1, "unrecognized ftp file method '%s', using default\n", str);
+  return CURLFTPMETHOD_MULTICWD;
 }
 
 static void set_common_curl_stuff(CURL* easy) {
@@ -1138,6 +1150,11 @@ static void set_common_curl_stuff(CURL* easy) {
 
   if (ftpfs.disable_eprt) {
     curl_easy_setopt_or_die(easy, CURLOPT_FTP_USE_EPRT, FALSE);
+  }
+
+  if (ftpfs.ftp_method) {
+    curl_easy_setopt_or_die(easy, CURLOPT_FTP_FILEMETHOD,
+                            ftpfilemethod(ftpfs.ftp_method));
   }
 
   if (ftpfs.tcp_nodelay) {

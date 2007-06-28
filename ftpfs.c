@@ -990,6 +990,15 @@ static struct fuse_cache_operations ftpfs_oper = {
   .cache_getdir = ftpfs_getdir,
 };
 
+static int curlftpfs_fuse_main(struct fuse_args *args)
+{
+#if FUSE_VERSION >= 26
+    return fuse_main(args->argc, args->argv, cache_init(&ftpfs_oper), NULL);
+#else
+    return fuse_main(args->argc, args->argv, cache_init(&ftpfs_oper));
+#endif
+}
+
 static int ftpfs_opt_proc(void* data, const char* arg, int key,
                           struct fuse_args* outargs) {
   (void) data;
@@ -1013,7 +1022,7 @@ static int ftpfs_opt_proc(void* data, const char* arg, int key,
     case KEY_HELP:
       usage(outargs->argv[0]);
       fuse_opt_add_arg(outargs, "-ho");
-      fuse_main(outargs->argc, outargs->argv, &ftpfs_oper.oper);
+      curlftpfs_fuse_main(outargs);
       exit(1);
     case KEY_VERBOSE:
       ftpfs.verbose = 1;
@@ -1270,11 +1279,30 @@ static void checkpasswd(const char *kind, /* for what purpose */
   }
 }
 
+#if FUSE_VERSION == 25
+static int fuse_opt_insert_arg(struct fuse_args *args, int pos,
+                               const char *arg)
+{
+    assert(pos <= args->argc);
+    if (fuse_opt_add_arg(args, arg) == -1)
+        return -1;
+
+    if (pos != args->argc - 1) {
+        char *newarg = args->argv[args->argc - 1];
+        memmove(&args->argv[pos + 1], &args->argv[pos],
+                sizeof(char *) * (args->argc - pos - 1));
+        args->argv[pos] = newarg;
+    }
+    return 0;
+}
+#endif
+
 int main(int argc, char** argv) {
   int res;
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
   CURLcode curl_res;
   CURL* easy;
+  char *tmp;
 
   // Initialize curl library before we are a multithreaded program
   curl_global_init(CURL_GLOBAL_ALL);
@@ -1349,7 +1377,12 @@ int main(int argc, char** argv) {
   ftpfs.connection = easy;
   pthread_mutex_init(&ftpfs.lock, NULL);
 
-  res = fuse_main(args.argc, args.argv, cache_init(&ftpfs_oper));
+  // Set the filesystem name to show the current server
+  tmp = g_strdup_printf("-ofsname=curlftpfs#%s", ftpfs.host);
+  fuse_opt_insert_arg(&args, 1, tmp);
+  g_free(tmp);
+
+  res = curlftpfs_fuse_main(&args);
 
   curl_multi_remove_handle(ftpfs.multi, easy);
   curl_easy_cleanup(easy);

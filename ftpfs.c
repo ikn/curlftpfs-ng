@@ -233,6 +233,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("ftp_port=%s",        ftp_port, 0),
   FTPFS_OPT("disable_eprt",       disable_eprt, 1),
   FTPFS_OPT("ftp_method=%s",      ftp_method, 0),
+  FTPFS_OPT("custom_list=%s",     custom_list, 0),
   FTPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   FTPFS_OPT("connect_timeout=%u", connect_timeout, 0),
   FTPFS_OPT("ssl",                use_ssl, CURLFTPSSL_ALL),
@@ -1059,6 +1060,7 @@ static void usage(const char* progname) {
 "    ftp_port=STR        use PORT with address instead of PASV\n"
 "    disable_eprt        use PORT, without trying EPRT first\n"
 "    ftp_method          [multicwd/singlecwd] Control CWD usage\n"
+"    custom_list=STR     Command used to list files. Defaults to \"LIST -a\"\n"
 "    tcp_nodelay         use the TCP_NODELAY option\n"
 "    connect_timeout=N   maximum time allowed for connection in seconds\n"
 "    ssl                 enable SSL/TLS for both control and data connections\n"
@@ -1117,6 +1119,10 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
   curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, "LIST -a");
 
+  if (ftpfs.custom_list) {
+    curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, ftpfs.custom_list);
+  }
+
   if (ftpfs.tryutf8) {
     // We'll let the slist leak, as it will still be accessible within
     // libcurl. If we ever want to add more commands to CURLOPT_QUOTE, we'll
@@ -1139,9 +1145,7 @@ static void set_common_curl_stuff(CURL* easy) {
   }
 
   if (ftpfs.skip_pasv_ip) {
-#ifdef CURLOPT_FTP_SKIP_PASV_IP
     curl_easy_setopt_or_die(easy, CURLOPT_FTP_SKIP_PASV_IP, TRUE);
-#endif
   }
 
   if (ftpfs.ftp_port) {
@@ -1158,10 +1162,8 @@ static void set_common_curl_stuff(CURL* easy) {
   }
 
   if (ftpfs.tcp_nodelay) {
-#ifdef CURLOPT_TCP_NODELAY
     /* CURLOPT_TCP_NODELAY is not defined in older versions */
     curl_easy_setopt_or_die(easy, CURLOPT_TCP_NODELAY, 1);
-#endif
   }
 
   curl_easy_setopt_or_die(easy, CURLOPT_CONNECTTIMEOUT, ftpfs.connect_timeout);

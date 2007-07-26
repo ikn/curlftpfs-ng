@@ -28,6 +28,7 @@ struct ftpfs {
   int disable_epsv;
   int skip_pasv_ip;
   char* ftp_method;
+  char* custom_list;
   int tcp_nodelay;
   char* ftp_port;
   int disable_eprt;

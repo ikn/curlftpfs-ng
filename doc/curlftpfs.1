@@ -80,6 +80,10 @@ Maximum time in seconds that you allow the connection to the server to take.
 This only limits the connection phase, once curlftpfs has connected this option
 is of no more use.
 .TP
+.B custom_list=<command>
+Command used by curlftpfs to list files. The default is "LIST -a" but some
+servers might require extra options, e.g. "LIST -la".
+.TP
 .B disable_eprt
 Tell curlftpfs to disable the use of the EPRT and LPRT commands when doing
 active FTP transfers. Curlftpfs will normally always first attempt to use EPRT,

@@ -107,9 +107,13 @@ struct ftpfs_file {
   CURL *write_conn;
   sem_t data_avail;
   sem_t data_need;
+  sem_t data_written;
   sem_t ready;
   int isready;
   int eof;
+  int written_flag;
+  int write_fail_cause;
+  char curl_error_buffer[CURL_ERROR_SIZE];
   off_t pos;
 };
 
@@ -412,7 +416,14 @@ static size_t write_data_bg(void *ptr, size_t size, size_t nmemb, void *data) {
     fh->isready = 1;
   }
 
-  sem_wait(&fh->data_avail);
+  if (fh->stream_buf.len == 0 && fh->written_flag) {
+    sem_post(&fh->data_written); /* ftpfs_write can return */
+  }
+  
+  sem_wait(&fh->data_avail); 
+  
+  DEBUG(2, "write_data_bg: data_avail eof=%d\n", fh->eof);
+  
   if (fh->eof)
     return 0;
 
@@ -426,29 +437,52 @@ static size_t write_data_bg(void *ptr, size_t size, size_t nmemb, void *data) {
     memmove(fh->stream_buf.p, fh->stream_buf.p + to_copy, newlen);
     fh->stream_buf.len = newlen;
     sem_post(&fh->data_avail);
+    DEBUG(2, "write_data_bg: data_avail\n");    
+    
   } else {
     fh->stream_buf.len = 0;
+    fh->written_flag = 1;
     sem_post(&fh->data_need);
+    DEBUG(2, "write_data_bg: data_need\n");
   }
 
   return to_copy;
 }
 
+int write_thread_ctr = 0;
+
 static void *ftpfs_write_thread(void *data) {
   struct ftpfs_file *fh = data;
 
+  DEBUG(2, "enter write thread #%d path=%s\n", ++write_thread_ctr, fh->full_path);
+  
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_URL, fh->full_path);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 1);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_INFILESIZE, -1);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READFUNCTION, write_data_bg);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READDATA, fh);
+  fh->curl_error_buffer[0] = '\0';
+  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_ERRORBUFFER, fh->curl_error_buffer);
+  
   CURLcode curl_res = curl_easy_perform(fh->write_conn);
+  
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 0);
 
   if (!fh->isready)
     sem_post(&fh->ready);
 
-  (void) curl_res;
+  if (curl_res != CURLE_OK)
+  {  
+	  DEBUG(1, "write problem: %d(%s) text=%s\n", curl_res, curl_easy_strerror(curl_res), fh->curl_error_buffer);
+	  fh->write_fail_cause = curl_res;
+	  /* problem - let ftpfs_write continue to avoid hang */ 
+	  sem_post(&fh->data_need);
+  }
+  
+  DEBUG(2, "leave write thread #%d curl_res=%d\n", write_thread_ctr--, curl_res);
+  
+  sem_post(&fh->data_written); /* ftpfs_write may return */
+
   return NULL;
 }
 
@@ -458,6 +492,7 @@ static void free_ftpfs_file(struct ftpfs_file *fh) {
   g_free(fh->full_path);
   sem_destroy(&fh->data_avail);
   sem_destroy(&fh->data_need);
+  sem_destroy(&fh->data_written);
   sem_destroy(&fh->ready);
   free(fh);
 }
@@ -482,12 +517,35 @@ static int buffer_file(struct ftpfs_file *fh) {
   return 0;
 }
 
+static int create_empty_file(const char * path)
+{
+  int err = 0;
+
+  char *full_path = get_full_path(path);
+
+  pthread_mutex_lock(&ftpfs.lock);
+  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, 0);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, NULL);
+  CURLcode curl_res = curl_easy_perform(ftpfs.connection);
+  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
+
+  if (curl_res != 0) {
+    err = -EPERM;
+  }	
+  free(full_path);
+  return err;
+}
+
 static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev);
 static int ftpfs_chmod(const char* path, mode_t mode);
 
 static int ftpfs_open_common(const char* path, mode_t mode,
                              struct fuse_file_info* fi) {
-  DEBUG(2, "%d\n", fi->flags & O_ACCMODE);
+  DEBUG(2, "ftpfs_open_common: accmode=%d\n", fi->flags & O_ACCMODE);
   int err = 0;
 
   struct ftpfs_file* fh =
@@ -503,8 +561,12 @@ static int ftpfs_open_common(const char* path, mode_t mode,
   buf_init(&fh->stream_buf);
   sem_init(&fh->data_avail, 0, 0);
   sem_init(&fh->data_need, 0, 0);
+  sem_init(&fh->data_written, 0, 0);
   sem_init(&fh->ready, 0, 0);
   fh->full_path = get_full_path(path);
+  fh->written_flag = 0;
+  fh->write_fail_cause = CURLE_OK;
+  fh->curl_error_buffer[0] = '\0';
   fi->fh = (unsigned long) fh;
 
   if ((fi->flags & O_ACCMODE) == O_RDONLY) {
@@ -587,27 +649,13 @@ static int ftpfs_mknod(const char* path, mode_t mode, dev_t rdev) {
 
   int err = 0;
 
+  DEBUG(1, "ftpfs_mknode: mode=%d\n", (int)mode);
+  
   if ((mode & S_IFMT) != S_IFREG)
     return -EPERM;
 
-  char *full_path = get_full_path(path);
-
-  pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, 0);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_READDATA, NULL);
-  CURLcode curl_res = curl_easy_perform(ftpfs.connection);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 0);
-  pthread_mutex_unlock(&ftpfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }
-
-  free(full_path);
-
+  err = create_empty_file(path);
+ 
   if (!err)
       ftpfs_chmod(path, mode);
 
@@ -656,6 +704,8 @@ static int ftpfs_chmod(const char* path, mode_t mode) {
 static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
   int err = 0;
   
+  DEBUG(1, "ftpfs_chown: %d %d\n", (int)uid, (int)gid);
+  
   struct curl_slist* header = NULL;
   char* full_path = get_dir_path(path);
   char* filename = get_file_name(path);
@@ -693,7 +743,9 @@ static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
 
 static int ftpfs_truncate(const char* path, off_t offset) {
   DEBUG(1, "ftpfs_truncate: %lld\n", offset);
-  if (offset == 0) return ftpfs_mknod(path, S_IFREG, 0);
+  /* we can't use ftpfs_mknod here, because we don't know the right permissions */
+  if (offset == 0) return create_empty_file(path);
+  /* shouldn't we return an error on offset>0? */
   return 0;
 }
 
@@ -820,6 +872,7 @@ static int ftpfs_write(const char *path, const char *wbuf, size_t size,
   DEBUG(1, "ftpfs_write: %zu %lld\n", size, (long long) offset);
   if (fh->write_conn) {
     sem_wait(&fh->data_need);
+    
     if (offset != fh->pos) {
       DEBUG(1, "non-sequential write detected, falling back on buffered write\n");
       fh->eof = 1;
@@ -836,8 +889,20 @@ static int ftpfs_write(const char *path, const char *wbuf, size_t size,
         return -ENOMEM;
       }
       fh->pos += size;
+      /* wake up write_data_bg */
       sem_post(&fh->data_avail);
+      /* wait until libcurl has completely written the current chunk or finished/failed */
+      sem_wait(&fh->data_written);  
+      fh->written_flag = 0;
+      
+      if (fh->write_fail_cause != CURLE_OK)
+      {
+    	/* TODO: on error we should problably unlink the target file  */ 
+        DEBUG(1, "writing failed. cause=%d\n", fh->write_fail_cause);
+        return -EIO;
+      }    
     }
+    
   }
 
   if (!fh->write_conn) {
@@ -893,6 +958,7 @@ static int ftpfs_fsync(const char *path, int isdatasync,
 
 static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
 
+  int err=0;
   struct ftpfs_file* fh = get_ftpfs_file(fi);
   ftpfs_flush(path, fi);
   pthread_mutex_lock(&ftpfs.lock);
@@ -902,14 +968,30 @@ static int ftpfs_release(const char* path, struct fuse_file_info* fi) {
   pthread_mutex_unlock(&ftpfs.lock);
 
   if (fh->write_conn) {
-    sem_wait(&fh->data_need);
-    fh->eof = 1;
+    if (fh->write_fail_cause == CURLE_OK)
+    {
+      sem_wait(&fh->data_need);  /* only wait when there has been no error */
+    }
     sem_post(&fh->data_avail);
+    fh->eof = 1;
+    
     pthread_join(fh->thread_id, NULL);
+    DEBUG(2, "ftpfs_relase after pthread_join. write_fail_cause=%d\n", fh->write_fail_cause);
+    
+    if (fh->write_fail_cause != CURLE_OK)
+    {
+      err = -EIO;
+    }
+    
   }
 
   free_ftpfs_file(fh);
-  return 0;
+  /* TODO: returning the error from release has no effect!
+    this is particularly problematic in disk is full situations. 
+    the curl connection should be terminated in flush
+    and restarted on subsequent writes! 
+  */
+  return err; 
 }
 
 

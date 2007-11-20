@@ -18,7 +18,7 @@ if test "$libcurl_protocol_FTP" != yes; then
 	AC_MSG_ERROR(["We need libcurl with support for FTP protocol."])
 fi
 
-CFLAGS="$CFLAGS -Wall -W -D_REENTRANT $GLIB_CFLAGS $FUSE_CFLAGS $LIBCURL_CPPFLAGS"
+CFLAGS="$CFLAGS -Wall -W -Wno-sign-compare -D_REENTRANT $GLIB_CFLAGS $FUSE_CFLAGS $LIBCURL_CPPFLAGS"
 LIBS="$GLIB_LIBS $FUSE_LIBS $LIBCURL"
 
 have_fuse_opt_parse=no
@@ -40,9 +40,9 @@ AC_STRUCT_ST_BLOCKS
 AC_CHECK_MEMBERS([struct stat.st_rdev])
 AC_HEADER_TIME
 AC_STRUCT_TM
-AC_TYPE_UINT32_T
-AC_TYPE_UINT64_T
-AC_TYPE_UINT8_T
+#AC_TYPE_UINT32_T
+#AC_TYPE_UINT64_T
+#AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_CHOWN

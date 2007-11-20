@@ -65,6 +65,7 @@ struct ftpfs {
   int tryutf8;
   char *codepage;
   char *iocharset;
+  int multiconn;
 };
 
 extern struct ftpfs ftpfs;

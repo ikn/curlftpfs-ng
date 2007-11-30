@@ -717,10 +717,19 @@ static int ftpfs_open_common(const char* path, mode_t mode,
 
   else if ((fi->flags & O_ACCMODE) == O_RDWR || (fi->flags & O_ACCMODE) == O_WRONLY)
   {
+#ifndef CURLFTPFS_O_RW_WORKAROUND
+	  if ((fi->flags & O_ACCMODE) == O_RDWR)
+	  {
+		  err = -ENOTSUP;
+		  goto fin;
+	  }
+#endif
+	  
+	  
 	  if ((fi->flags & O_APPEND))
 	  {
 		DEBUG(1, "opening %s with O_APPEND - not supported!\n", path);
-		err = -EACCES;
+		err = -ENOTSUP;
 	  }
 	  
 	  if ((fi->flags & O_EXCL))
@@ -765,6 +774,7 @@ static int ftpfs_open_common(const char* path, mode_t mode,
       err = -EIO;
   }
 
+  fin:
   if (err)
     free_ftpfs_file(fh);
 

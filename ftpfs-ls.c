@@ -101,7 +101,7 @@ static int parse_dir_unix(const char *line,
   if (ftpfs.blksize) {
     sbuf->st_blksize = ftpfs.blksize;
     sbuf->st_blocks =
-      ((size + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
+      ((size + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
   }
 
   sprintf(date,"%s,%s,%s", year, month, day);
@@ -168,7 +168,7 @@ static int parse_dir_win(const char *line,
     if (ftpfs.blksize) {
       sbuf->st_blksize = ftpfs.blksize;
       sbuf->st_blocks =
-        ((nsize + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
+        ((nsize + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
     }
   }
 

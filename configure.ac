@@ -1,4 +1,4 @@
-AC_INIT(curlftpfs, 0.9.1)
+AC_INIT(curlftpfs, 0.9.2)
 AM_INIT_AUTOMAKE
 AM_CONFIG_HEADER(config.h)
 
@@ -13,7 +13,7 @@ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 PKG_CHECK_MODULES(GLIB, [glib-2.0])
 PKG_CHECK_MODULES(FUSE, [fuse >= 2.2])
 
-LIBCURL_CHECK_CONFIG([yes], [7.15.2], [], [AC_MSG_ERROR(["libcurl not found"])])
+LIBCURL_CHECK_CONFIG([yes], [7.17.0], [], [AC_MSG_ERROR(["libcurl not found"])])
 if test "$libcurl_protocol_FTP" != yes; then
 	AC_MSG_ERROR(["We need libcurl with support for FTP protocol."])
 fi

@@ -13,6 +13,13 @@ As the FTP protocol is not very feature rich, this filesystem does not
 fulfill every constraint of a real filesystem, but it should be usable
 for simple tasks like copying and editing files.
 
+Requirements
+============
+
+GLib
+libcurl >= 7.17.0
+
+
 Compilation and Instalation
 ===========================
 
@@ -27,3 +34,14 @@ curlftpfs <ftpsite> <mountpoint>
 
 ex.:
 curlftpfs ftp://ftp.sunet.se/ sunet/
+
+
+Debugging
+=========
+
+curlftpfs -f -v -o debug,ftpfs_debug=3 <ftpsite> <mountpoint> 
+
+(runs the curlftpfs in foreground and shows libcurl messages)  
+
+
+

@@ -20,6 +20,7 @@ struct ftpfs {
   pthread_mutex_t lock;
   CURL* connection;
   CURLM* multi;
+  int attached_to_multi;
   struct ftpfs_file* current_fh;
   unsigned blksize;
   int verbose;

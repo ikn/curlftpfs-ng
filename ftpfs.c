@@ -189,6 +189,23 @@ static struct ftpfs_file *get_ftpfs_file(struct fuse_file_info *fi)
   return (struct ftpfs_file *) (uintptr_t) fi->fh;
 }
 
+static void cancel_previous_multi()
+{
+  //curl_multi_cleanup(ftpfs.multi);
+  
+  if (!ftpfs.attached_to_multi) return;
+  
+  DEBUG(1, "cancel previous multi\n");
+  
+  CURLMcode curlMCode = curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  if (curlMCode != CURLE_OK)
+  {
+      fprintf(stderr, "curl_multi_remove_handle problem: %d\n", curlMCode);
+      exit(1);
+  }
+  ftpfs.attached_to_multi = 0;  
+}
+
 static int op_return(int err, char * operation)
 {
 	if(!err)
@@ -246,7 +263,7 @@ static int ftpfs_getdir(const char* path, fuse_cache_dirh_t h,
   buf_init(&buf);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(ftpfs.connection);
@@ -276,7 +293,7 @@ static int ftpfs_getattr(const char* path, struct stat* sbuf) {
   buf_init(&buf);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(ftpfs.connection);
@@ -328,15 +345,16 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
         offset < fh->buf.begin_offset ||
         offset > fh->buf.begin_offset + fh->buf.len ||
         !check_running()) {
-      DEBUG(1, "We need to restart the connection\n");
-      DEBUG(2, "%p %p\n", ftpfs.current_fh, fh);
-      DEBUG(2, "%lld %lld\n", fh->buf.begin_offset, offset);
+      DEBUG(1, "We need to restart the connection %p\n", ftpfs.connection);
+      DEBUG(2, "current_fh=%p fh=%p\n", ftpfs.current_fh, fh);
+      DEBUG(2, "buf.begin_offset=%lld offset=%lld\n", fh->buf.begin_offset, offset);
 
       buf_clear(&fh->buf);
       fh->buf.begin_offset = offset;
       ftpfs.current_fh = fh;
 
-      curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+      cancel_previous_multi();
+      
       curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
       curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &fh->buf);
       if (offset) {
@@ -344,7 +362,14 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
         snprintf(range, 15, "%lld-", (long long) offset);
         curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_RANGE, range);
       }
-      curl_multi_add_handle(ftpfs.multi, ftpfs.connection);
+      
+      CURLMcode curlMCode =  curl_multi_add_handle(ftpfs.multi, ftpfs.connection);
+      if (curlMCode != CURLE_OK)
+      {
+          fprintf(stderr, "curl_multi_add_handle problem: %d\n", curlMCode);
+          exit(1);
+      }
+      ftpfs.attached_to_multi = 1;
     }
 
     while(CURLM_CALL_MULTI_PERFORM ==
@@ -389,6 +414,7 @@ static size_t ftpfs_read_chunk(const char* full_path, char* rbuf,
         if (msg == NULL ||
             msg->msg != CURLMSG_DONE ||
             msg->data.result != CURLE_OK) {
+          DEBUG(1, "error: curl_multi_info %d\n", msg->msg);
           err = 1;
         }
       }
@@ -597,7 +623,7 @@ static int buffer_file(struct ftpfs_file *fh) {
   // modify it in memory and then upload it as a whole as most FTP servers
   // don't support resume for uploads.
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, fh->full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &fh->buf);
   CURLcode curl_res = curl_easy_perform(ftpfs.connection);
@@ -710,6 +736,7 @@ static int ftpfs_open_common(const char* path, mode_t mode,
       size_t size = ftpfs_read_chunk(fh->full_path, NULL, 1, 0, fi, 0);
 
       if (size == CURLFTPFS_BAD_READ) {
+        DEBUG(1, "initial read failed size=%d\n", size);
         err = -EACCES;
       }
     }
@@ -854,7 +881,7 @@ static int ftpfs_chmod(const char* path, mode_t mode) {
   header = curl_slist_append(header, cmd);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -893,7 +920,7 @@ static int ftpfs_chown(const char* path, uid_t uid, gid_t gid) {
   header = curl_slist_append(header, cmd2);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -983,7 +1010,7 @@ static int ftpfs_rmdir(const char* path) {
   header = curl_slist_append(header, cmd);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -1017,7 +1044,7 @@ static int ftpfs_mkdir(const char* path, mode_t mode) {
   header = curl_slist_append(header, cmd);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -1055,7 +1082,7 @@ static int ftpfs_unlink(const char* path) {
   header = curl_slist_append(header, cmd);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -1246,7 +1273,7 @@ static int ftpfs_rename(const char* from, const char* to) {
   header = curl_slist_append(header, rnto);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, ftpfs.host);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
@@ -1278,7 +1305,7 @@ static int ftpfs_readlink(const char *path, char *linkbuf, size_t size) {
   buf_init(&buf);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(ftpfs.connection);
@@ -1704,6 +1731,7 @@ int main(int argc, char** argv) {
   ftpfs.blksize = 4096;
   ftpfs.disable_epsv = 1;
   ftpfs.multiconn = 1;
+  ftpfs.attached_to_multi = 0;
   
   if (fuse_opt_parse(&args, &ftpfs, ftpfs_opts, ftpfs_opt_proc) == -1)
     exit(1);
@@ -1774,7 +1802,7 @@ int main(int argc, char** argv) {
 
   res = curlftpfs_fuse_main(&args);
 
-  curl_multi_remove_handle(ftpfs.multi, easy);
+  cancel_previous_multi();
   curl_multi_cleanup(ftpfs.multi);
   curl_easy_cleanup(easy);
   curl_global_cleanup();

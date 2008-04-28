@@ -643,7 +643,7 @@ static int create_empty_file(const char * path)
   char *full_path = get_full_path(path);
 
   pthread_mutex_lock(&ftpfs.lock);
-  curl_multi_remove_handle(ftpfs.multi, ftpfs.connection);
+  cancel_previous_multi();
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_INFILESIZE, 0);
   curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_UPLOAD, 1);

@@ -1494,7 +1494,15 @@ static void usage(const char* progname) {
 "    utf8                try to transfer file list with utf-8 encoding\n"
 "    codepage=STR        set the codepage the server uses\n"
 "    iocharset=STR       set the charset used by the client\n"
-"\n", progname);
+"\n"
+"CurlFtpFS cache options:  \n"
+"    cache=yes|no              enable/disable cache (default: yes)\n"
+"    cache_timeout=SECS        set timeout for stat, dir, link at once\n"
+"                              default is %d seconds\n"
+"    cache_stat_timeout=SECS   set stat timeout\n"
+"    cache_dir_timeout=SECS    set dir timeout\n"
+"    cache_link_timeout=SECS   set link timeout\n"          
+"\n", progname, DEFAULT_CACHE_TIMEOUT);
 }
 
 static int ftpfilemethod(const char *str)

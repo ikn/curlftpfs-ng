@@ -14,11 +14,6 @@
 #include <glib.h>
 #include <pthread.h>
 
-#define DEFAULT_CACHE_TIMEOUT 300
-#define MAX_CACHE_SIZE 10000
-#define MIN_CACHE_CLEAN_INTERVAL 5
-#define CACHE_CLEAN_INTERVAL 60
-
 struct cache {
     int on;
     unsigned stat_timeout;

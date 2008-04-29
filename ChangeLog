@@ -1,3 +1,15 @@
+Apr 29, 2008
+release curlftpfs 0.9.2
+mail2nob
+
+Apr 29, 2008
+new helper function cancel_previous_multi() which checks for errors.
+mail2nob
+
+Apr 25, 2008
+bump configure.ac version 0.9.2; requires libcurl >=7.17.0
+mail2nob
+
 Apr 23, 2008 	
 add Makefile.cvs 
 mail2nob

@@ -12,7 +12,6 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <pthread.h>
-#include <glib.h>
 #include <pthread.h>
 
 struct ftpfs {
@@ -21,14 +20,16 @@ struct ftpfs {
   pthread_mutex_t lock;
   CURL* connection;
   CURLM* multi;
+  int attached_to_multi;
   struct ftpfs_file* current_fh;
   unsigned blksize;
-  GHashTable *filetab;  
   int verbose;
   int debug;
   int transform_symlinks;
   int disable_epsv;
   int skip_pasv_ip;
+  char* ftp_method;
+  char* custom_list;
   int tcp_nodelay;
   char* ftp_port;
   int disable_eprt;
@@ -53,6 +54,7 @@ struct ftpfs {
   int proxybasic;
   int proxydigest;
   int proxyntlm;
+  int proxytype;
   char* user;
   char* proxy_user;
   int ssl_version;
@@ -62,12 +64,17 @@ struct ftpfs {
   curl_version_info_data* curl_version;
   int safe_nobody;
   int tryutf8;
+  char *codepage;
+  char *iocharset;
+  int multiconn;
 };
 
 extern struct ftpfs ftpfs;
 
-#define DEBUG(args...) \
-        do { if (ftpfs.debug) {\
+#define DEBUG(level, args...) \
+        do { if (level <= ftpfs.debug) {\
+               int i = 0; \
+               while (++i < level) fprintf(stderr, " "); \
                fprintf(stderr, "%ld ", time(NULL));\
                fprintf(stderr, __FILE__ ":%d ", __LINE__);\
                fprintf(stderr, args);\

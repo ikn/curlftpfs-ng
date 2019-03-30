@@ -6,7 +6,12 @@
     See the file COPYING.
 */
 
+#ifndef __FreeBSD__
 #define _XOPEN_SOURCE 600
+#else
+#define _XOPEN_SOURCE
+#endif
+
 #include <time.h>
 #include <string.h>
 #include <sys/types.h>
@@ -17,6 +22,7 @@
 #include <glib.h>
 
 #include "ftpfs.h"
+#include "charset_utils.h"
 #include "ftpfs-ls.h"
 
 static int parse_dir_unix(const char *line,
@@ -95,7 +101,7 @@ static int parse_dir_unix(const char *line,
   if (ftpfs.blksize) {
     sbuf->st_blksize = ftpfs.blksize;
     sbuf->st_blocks =
-      ((size + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
+      ((size + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
   }
 
   sprintf(date,"%s,%s,%s", year, month, day);
@@ -107,7 +113,7 @@ static int parse_dir_unix(const char *line,
     strptime(date, "%H:%M,%b,%d", &tm);
     // Unix systems omit the year for the last six months
     if (cur_mon + 5 < tm.tm_mon) {  // month from last year
-      DEBUG("correct year: cur_mon: %d, file_mon: %d\n", cur_mon, tm.tm_mon);
+      DEBUG(2, "correct year: cur_mon: %d, file_mon: %d\n", cur_mon, tm.tm_mon);
       tm.tm_year--;  // correct the year
     }
   } else {
@@ -141,7 +147,7 @@ static int parse_dir_win(const char *line,
     return 0;
   }
 
-  DEBUG("date: %s hour: %s size: %s file: %s\n", date, hour, size, file);
+  DEBUG(2, "date: %s hour: %s size: %s file: %s\n", date, hour, size, file);
 
   tt = time(NULL);
   gmtime_r(&tt, &tm);
@@ -162,7 +168,7 @@ static int parse_dir_win(const char *line,
     if (ftpfs.blksize) {
       sbuf->st_blksize = ftpfs.blksize;
       sbuf->st_blocks =
-        ((nsize + ftpfs.blksize - 1) & ~(ftpfs.blksize - 1)) >> 9;
+        ((nsize + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
     }
   }
 
@@ -217,6 +223,10 @@ int parse_dir(const char* list, const char* dir,
     line[end - start] = '\0';
     start = *end == '\r' ? end + 2 : end + 1;
 
+    if (ftpfs.codepage) {
+      convert_charsets(ftpfs.codepage, ftpfs.iocharset, &line);
+    }
+
     file[0] = link[0] = '\0';
     int res = parse_dir_unix(line, &stat_buf, file, link) ||
               parse_dir_win(line, &stat_buf, file, link) ||
@@ -234,7 +244,7 @@ int parse_dir(const char* list, const char* dir,
         }
         int linksize = strlen(reallink);
         cache_add_link(full_path, reallink, linksize+1);
-        DEBUG("cache_add_link: %s %s\n", full_path, reallink);
+        DEBUG(1, "cache_add_link: %s %s\n", full_path, reallink);
         if (linkbuf && linklen) {
           if (linksize > linklen) linksize = linklen - 1;
           strncpy(linkbuf, reallink, linksize);
@@ -244,14 +254,14 @@ int parse_dir(const char* list, const char* dir,
       }
 
       if (h && filler) {
-        DEBUG("filler: %s\n", file);
+        DEBUG(1, "filler: %s\n", file);
         filler(h, file, &stat_buf);
       } else {
-        DEBUG("cache_add_attr: %s\n", full_path);
+        DEBUG(1, "cache_add_attr: %s\n", full_path);
         cache_add_attr(full_path, &stat_buf);
       }
 
-      DEBUG("comparing %s %s\n", name, file);
+      DEBUG(2, "comparing %s %s\n", name, file);
       if (name && !strcmp(name, file)) {
         if (sbuf) *sbuf = stat_buf;
         found = 1;

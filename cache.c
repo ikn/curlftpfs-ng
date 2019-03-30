@@ -14,11 +14,6 @@
 #include <glib.h>
 #include <pthread.h>
 
-#define DEFAULT_CACHE_TIMEOUT 300
-#define MAX_CACHE_SIZE 10000
-#define MIN_CACHE_CLEAN_INTERVAL 5
-#define CACHE_CLEAN_INTERVAL 60
-
 struct cache {
     int on;
     unsigned stat_timeout;
@@ -34,6 +29,7 @@ static struct cache cache;
 
 struct node {
     struct stat stat;
+    int not_found;
     time_t stat_valid;
     char **dir;
     time_t dir_valid;
@@ -145,7 +141,12 @@ void cache_add_attr(const char *path, const struct stat *stbuf)
     pthread_mutex_lock(&cache.lock);
     node = cache_get(path);
     now = time(NULL);
-    node->stat = *stbuf;
+    if (stbuf) {
+      node->stat = *stbuf;
+      node->not_found = 0;
+    } else {
+      node->not_found = 1;
+    }
     node->stat_valid = time(NULL) + cache.stat_timeout;
     if (node->stat_valid > node->valid)
         node->valid = node->stat_valid;
@@ -163,6 +164,7 @@ void cache_add_dir(const char *path, char **dir)
     now = time(NULL);
     g_strfreev(node->dir);
     node->dir = dir;
+    node->not_found = 0;
     node->dir_valid = time(NULL) + cache.dir_timeout;
     if (node->dir_valid > node->valid)
         node->valid = node->dir_valid;
@@ -187,6 +189,7 @@ void cache_add_link(const char *path, const char *link, size_t size)
     now = time(NULL);
     g_free(node->link);
     node->link = g_strndup(link, my_strnlen(link, size-1));
+    node->not_found = 0;
     node->link_valid = time(NULL) + cache.link_timeout;
     if (node->link_valid > node->valid)
         node->valid = node->link_valid;
@@ -203,8 +206,12 @@ static int cache_get_attr(const char *path, struct stat *stbuf)
     if (node != NULL) {
         time_t now = time(NULL);
         if (node->stat_valid - now >= 0) {
-            *stbuf = node->stat;
-            err = 0;
+            if (node->not_found) {
+              err = -ENOENT;
+            } else {
+              *stbuf = node->stat;
+              err = 0;
+            }
         }
     }
     pthread_mutex_unlock(&cache.lock);
@@ -214,10 +221,12 @@ static int cache_get_attr(const char *path, struct stat *stbuf)
 static int cache_getattr(const char *path, struct stat *stbuf)
 {
     int err = cache_get_attr(path, stbuf);
-    if (err) {
+    if (err == -EAGAIN) {
         err = cache.next_oper->oper.getattr(path, stbuf);
         if (!err)
             cache_add_attr(path, stbuf);
+        else if (err == -ENOENT)
+            cache_add_attr(path, NULL);
     }
     return err;
 }
@@ -433,10 +442,12 @@ static int cache_fgetattr(const char *path, struct stat *stbuf,
                           struct fuse_file_info *fi)
 {
     int err = cache_get_attr(path, stbuf);
-    if (err) {
+    if (err == -EAGAIN) {
         err = cache.next_oper->oper.fgetattr(path, stbuf, fi);
         if (!err)
             cache_add_attr(path, stbuf);
+        else if (err == -ENOENT)
+            cache_add_attr(path, NULL);
     }
     return err;
 }

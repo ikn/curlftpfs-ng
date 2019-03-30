@@ -1,4 +1,4 @@
-.TH curlftpfs 1 "12 Apr 2006" "CurlFtpFS 0.6.1" "CurlFtpFS Manual"
+.TH curlftpfs 1 "25 May 2007" "CurlFtpFS 0.9.2" "CurlFtpFS Manual"
 .SH NAME
 curlftpfs \- mount a ftp host as a local directory
 .SH SYNOPSIS
@@ -72,10 +72,17 @@ set when you compile OpenSSL.
 Read up on SSL cipher list details
 on this URL: \fIhttp://www.openssl.org/docs/apps/ciphers.html\fP
 .TP
+.B codepage=<name>
+Sets the encoding the ftp server uses to encode file names.
+.TP
 .B connect_timeout=<seconds>
 Maximum time in seconds that you allow the connection to the server to take.
 This only limits the connection phase, once curlftpfs has connected this option
 is of no more use.
+.TP
+.B custom_list=<command>
+Command used by curlftpfs to list files. The default is "LIST -a" but some
+servers might require extra options, e.g. "LIST -la".
 .TP
 .B disable_eprt
 Tell curlftpfs to disable the use of the EPRT and LPRT commands when doing
@@ -87,8 +94,11 @@ traditional PORT command.
 .TP
 .B disable_epsv
 Tell curlftpfs to disable the use of the EPSV command when doing passive FTP
-transfers. Curlftpfs will normally always first attempt to use EPSV before
-PASV, but with this option, it will not try using EPSV.
+transfers. This is the default.
+.TP
+.B enable_epsv
+Tell curlftpfs to enable the use of the EPSV command when doing passive FTP
+transfers. Curlftpfs will first attempt to use EPSV before PASV.
 .TP
 .B engine=<name>
 Select  the  OpenSSL crypto engine to use for cipher operations.  Use: 
@@ -103,6 +113,19 @@ Make curlftpfs print lots of debug information. Useful only in conjunction with
 the
 .B \-d
 option.
+.TP
+.B ftp_method=<method>
+Control what method curlftpfs should use to reach a file on the
+server. The method argument should be one of the following alternatives:
+.RS
+.IP multicwd
+curlftpfs does a single CWD operation for each path part in the given URL. For
+deep hierarchies this means very many commands. This is how RFC1738 says it
+should be done. This is the default but the slowest behavior.
+.IP singlecwd
+curlftpfs does one CWD with the full target directory and then operates on the
+file \&"normally" (like in the multicwd case). 
+.RE
 .TP
 .B ftp_port=<address>
 Reverses the initiator/listener roles when connecting with ftp. This
@@ -128,10 +151,17 @@ attempt to use the EPRT command instead of PORT by using \fIdisable_eprt\fP.
 EPRT is really PORT++.
 .RE
 .TP
+.B httpproxy
+Set the proxy type to HTTP. This is the default type.
+.TP
 .B interface=<name>
 Pass a string as parameter. This set the interface name  to  use as  outgoing
 network  interface.  The  name can be an interface name, an IP address or a
 host name.
+.TP
+.B iocharset=<name>
+Sets the charset used by the client side for codepage to charset translation.
+Default: UTF8.
 .TP
 .B ipv4
 If  libcurl  is  capable  of resolving an address to multiple IP versions
@@ -221,6 +251,12 @@ Tell curlftpfs to not use the IP address the server suggests in its response
 to curlftpfs's PASV command when curlftpfs connects the data connection.
 Instead curlftpfs will re-use the same IP address it already uses for the
 control connection.
+.TP
+.B socks4
+Set the proxy type to SOCKS4.
+.TP
+.B socks5
+Set the proxy type to SOCKS5.
 .TP
 .B ssl
 Make curlftpfs use SSL/TLS for both control and data connections.

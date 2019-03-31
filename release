@@ -1,0 +1,20 @@
+#! /usr/bin/env bash
+
+version="$1"
+[ -z "$version" ] && {
+    echo >&2 "expected argument: release version"
+    exit 2
+}
+
+changed="$({ git clean -fdxn; git diff --name-only HEAD; } | wc -l)"
+rtn=
+cd "$(dirname "$0")" &&
+    git stash --all && {
+        autoreconf --install &&
+            tar -cz . > ../curlftpfs-ng-"$version".tar.gz
+        rtn="$?"
+        git reset --hard HEAD
+        git clean -fdx
+        [ "$changed" -gt 0 ] && git stash pop
+    }
+exit "${rtn:-$?}"

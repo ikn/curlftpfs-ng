@@ -2,7 +2,7 @@
 
 0.9.2-next:
  * migrate from cvs to git
-
+ * fix filenames with URL-reserved characters
 
 --- CurlFtpFS ---
 

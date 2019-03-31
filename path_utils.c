@@ -39,9 +39,11 @@ char* get_full_path(const char* path) {
     path = converted_path;
   }
 
-  ret = g_strdup_printf("%s%s", ftpfs.host, path);
+  const char *const escaped_path = g_uri_escape_string(path, "/", FALSE);
+  ret = g_strdup_printf("%s%s", ftpfs.host, escaped_path);
 
   free(converted_path);
+  free((char *) escaped_path);
 
   return ret;
 }
@@ -58,9 +60,12 @@ char* get_fulldir_path(const char* path) {
     path = converted_path;
   }
 
-  ret = g_strdup_printf("%s%s%s", ftpfs.host, path, strlen(path) ? "/" : "");
+  const char *const escaped_path = g_uri_escape_string(path, "/", FALSE);
+  ret = g_strdup_printf(
+    "%s%s%s", ftpfs.host, escaped_path, strlen(escaped_path) ? "/" : "");
 
   free(converted_path);
+  free((char *) escaped_path);
 
   return ret;
 }
@@ -71,24 +76,25 @@ char* get_dir_path(const char* path) {
   const char *lastdir;
 
   ++path;
-  
-  lastdir = strrchr(path, '/');
-  if (lastdir == NULL) lastdir = path;
 
-  if (ftpfs.codepage && (lastdir - path > 0)) {
-    converted_path = g_strndup(path, lastdir - path);
+  if (ftpfs.codepage) {
+    converted_path = g_strdup(path);
     convert_charsets(ftpfs.iocharset, ftpfs.codepage, &converted_path);
     path = converted_path;
-    lastdir = path + strlen(path);
   }
+
+  const char *const escaped_path = g_uri_escape_string(path, "/", FALSE);
+  lastdir = strrchr(escaped_path, '/');
+  if (lastdir == NULL) lastdir = escaped_path;
 
   ret = g_strdup_printf("%s%.*s%s",
                         ftpfs.host,
-                        lastdir - path,
-                        path,
-                        lastdir - path ? "/" : "");
+                        lastdir - escaped_path,
+                        escaped_path,
+                        lastdir - escaped_path ? "/" : "");
 
   free(converted_path);
+  free((char *) escaped_path);
 
   return ret;
 }

@@ -503,7 +503,7 @@ static void *ftpfs_write_thread(void *data) {
   
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_URL, fh->full_path);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_INFILESIZE, -1);
+  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_INFILESIZE, -1L);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READFUNCTION, write_data_bg);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READDATA, fh);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_LOW_SPEED_LIMIT, 1);

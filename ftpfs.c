@@ -607,6 +607,8 @@ static int finish_write_thread(struct ftpfs_file *fh)
 
 
 static void free_ftpfs_file(struct ftpfs_file *fh) {
+  buf_free(&fh->buf);
+  buf_free(&fh->stream_buf);
   if (fh->write_conn)
     curl_easy_cleanup(fh->write_conn);
   g_free(fh->full_path);

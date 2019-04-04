@@ -4,6 +4,7 @@
  * migrate from cvs to git
  * fix filenames with URL-reserved characters
  * fix possible error on closing files after modifying
+ * fix a memory leak
 
 --- CurlFtpFS ---
 

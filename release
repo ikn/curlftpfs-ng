@@ -11,7 +11,7 @@ rtn=
 cd "$(dirname "$0")" &&
     git stash --all && {
         autoreconf --install &&
-            tar -cz . > ../curlftpfs-ng-"$version".tar.gz
+            tar --transform="s/^\\./curlftpfs-ng-$version/" --show-transformed-names -cz . > ../curlftpfs-ng-"$version".tar.gz
         rtn="$?"
         git reset --hard HEAD
         git clean -fdx

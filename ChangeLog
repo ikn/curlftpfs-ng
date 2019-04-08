@@ -1,10 +1,11 @@
 --- CurlFtpFS-NG ---
 
-0.9.2-next:
+0.9.3:
  * migrate from cvs to git
  * fix filenames with URL-reserved characters
  * fix possible error on closing files after modifying
  * fix a memory leak
+ * fix unit tests
 
 --- CurlFtpFS ---
 

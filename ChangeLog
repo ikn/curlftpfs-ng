@@ -1,5 +1,8 @@
 --- CurlFtpFS-NG ---
 
+0.9.3-next:
+ * fix option `no_verify_hostname' with more recent curl versions
+
 0.9.3:
  * migrate from cvs to git
  * fix filenames with URL-reserved characters

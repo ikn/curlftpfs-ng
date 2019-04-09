@@ -1,4 +1,4 @@
-CurlFtpFS-NG 0.9.3
+CurlFtpFS-NG 0.9.3-next
 
 This is a fork of the unmaintained CurlFtpFS.  I don't have any great plans,
 just fixing a bug that has already been fixed in various places and in various

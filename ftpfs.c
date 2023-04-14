@@ -174,6 +174,7 @@ static struct fuse_opt ftpfs_opts[] = {
   FTPFS_OPT("codepage=%s",        codepage, 0),
   FTPFS_OPT("iocharset=%s",       iocharset, 0),
   FTPFS_OPT("nomulticonn",        multiconn, 0),
+  FTPFS_OPT("netrc=%s",           netrc, 0),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -618,24 +619,6 @@ static void free_ftpfs_file(struct ftpfs_file *fh) {
   sem_destroy(&fh->data_written);
   sem_destroy(&fh->ready);
   free(fh);
-}
-
-static int buffer_file(struct ftpfs_file *fh) {
-  // If we want to write to the file, we have to load it all at once,
-  // modify it in memory and then upload it as a whole as most FTP servers
-  // don't support resume for uploads.
-  pthread_mutex_lock(&ftpfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, fh->full_path);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &fh->buf);
-  CURLcode curl_res = curl_easy_perform(ftpfs.connection);
-  pthread_mutex_unlock(&ftpfs.lock);
-
-  if (curl_res != 0) {
-    return -EACCES;
-  }
-
-  return 0;
 }
 
 static int create_empty_file(const char * path)
@@ -1496,6 +1479,7 @@ static void usage(const char* progname) {
 "    utf8                try to transfer file list with utf-8 encoding\n"
 "    codepage=STR        set the codepage the server uses\n"
 "    iocharset=STR       set the charset used by the client\n"
+"    netrc=STR           file to use instead of the default .netrc file\n"
 "\n"
 "CurlFtpFS cache options:  \n"
 "    cache=yes|no              enable/disable cache (default: yes)\n"
@@ -1763,6 +1747,9 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Error initializing libcurl\n");
     exit(1);
   }
+
+  if (ftpfs.netrc)
+    curl_easy_setopt_or_die(easy, CURLOPT_NETRC_FILE, ftpfs.netrc);
 
   res = cache_parse_options(&args);
   if (res == -1)

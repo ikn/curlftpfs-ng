@@ -621,24 +621,6 @@ static void free_ftpfs_file(struct ftpfs_file *fh) {
   free(fh);
 }
 
-static int buffer_file(struct ftpfs_file *fh) {
-  // If we want to write to the file, we have to load it all at once,
-  // modify it in memory and then upload it as a whole as most FTP servers
-  // don't support resume for uploads.
-  pthread_mutex_lock(&ftpfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_URL, fh->full_path);
-  curl_easy_setopt_or_die(ftpfs.connection, CURLOPT_WRITEDATA, &fh->buf);
-  CURLcode curl_res = curl_easy_perform(ftpfs.connection);
-  pthread_mutex_unlock(&ftpfs.lock);
-
-  if (curl_res != 0) {
-    return -EACCES;
-  }
-
-  return 0;
-}
-
 static int create_empty_file(const char * path)
 {
   int err = 0;

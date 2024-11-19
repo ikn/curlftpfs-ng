@@ -4,6 +4,8 @@ This is a fork of the unmaintained CurlFtpFS.  I don't have any great plans,
 just fixing a bug that has already been fixed in various places and in various
 ways, but now as a piece of software that has a name.
 
+http://ikn.org.uk/tool/curlftpfs-ng/
+
 CurlFtpFS
 =========
 
@@ -25,10 +27,18 @@ Requirements
 glib-2.0
 libcurl >= 7.17.0
 
-
 Compilation and Installation
 ============================
 
+If you downloaded a release version:
+
+./configure
+make
+make install
+
+If you downloaded from version control:
+
+autoreconf --install
 ./configure
 make
 make install
@@ -41,14 +51,12 @@ curlftpfs <ftpsite> <mountpoint>
 ex.:
 curlftpfs ftp://ftp.sunet.se/ sunet/
 
-
 Debugging
 =========
 
 curlftpfs -f -v -o debug,ftpfs_debug=3 <ftpsite> <mountpoint> 
 
 (runs the curlftpfs in foreground and shows libcurl verbose debug output)  
-
 
 Known Problems
 ==============
@@ -62,7 +70,3 @@ deal with less capable file-systems.
 Should be fixed in libcurl >= 7.18.2
 
 http://sourceforge.net/tracker/index.php?func=detail&aid=1951588&group_id=976&atid=100976
-
-
-
-
